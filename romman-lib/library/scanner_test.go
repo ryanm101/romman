@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ryanm/romman/internal/db"
+	"github.com/ryanm/romman-lib/db"
 )
 
 func TestScanner_BasicScan(t *testing.T) {

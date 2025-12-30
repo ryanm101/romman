@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/ryanm/romman/internal/dat"
-	"github.com/ryanm/romman/internal/db"
-	"github.com/ryanm/romman/internal/library"
+	"github.com/ryanm/romman-lib/dat"
+	"github.com/ryanm/romman-lib/db"
+	"github.com/ryanm/romman-lib/library"
 )
 
 const defaultDBPath = "romman.db"
