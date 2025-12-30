@@ -55,6 +55,13 @@ func main() {
 			os.Exit(1)
 		}
 		handleCleanupCommand(os.Args[2:])
+	case "prefer":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: romman prefer <command>")
+			fmt.Println("Commands: rebuild, list")
+			os.Exit(1)
+		}
+		handlePreferCommand(os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -82,6 +89,8 @@ func printUsage() {
 	fmt.Println("  duplicates list <library>           List duplicate files")
 	fmt.Println("  cleanup plan <lib> <quarantine>     Generate cleanup plan")
 	fmt.Println("  cleanup exec <plan> [--dry-run]     Execute cleanup plan")
+	fmt.Println("  prefer rebuild <system>             Rebuild preferred releases")
+	fmt.Println("  prefer list <system>                List preferred releases")
 	fmt.Println("  help                                Show this help")
 	fmt.Println()
 	fmt.Println("Environment:")
@@ -754,5 +763,107 @@ func executeCleanupPlan(planFile string, dryRun bool) {
 
 	if dryRun {
 		fmt.Println("\n(Dry run - no files were modified)")
+	}
+}
+
+func handlePreferCommand(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: romman prefer <command>")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "rebuild":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman prefer rebuild <system>")
+			os.Exit(1)
+		}
+		rebuildPreferred(args[1])
+	case "list":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman prefer list <system>")
+			os.Exit(1)
+		}
+		listPreferred(args[1])
+	default:
+		fmt.Printf("Unknown prefer command: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func rebuildPreferred(systemName string) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Get system ID
+	var systemID int64
+	err = database.Conn().QueryRow("SELECT id FROM systems WHERE name = ?", systemName).Scan(&systemID)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "System not found: %s\n", systemName)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Rebuilding preferred releases for: %s\n", systemName)
+
+	config := library.DefaultPreferenceConfig()
+	selector := library.NewPreferenceSelector(database.Conn(), config)
+
+	if err := selector.SelectPreferred(systemID); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error rebuilding preferred: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get counts
+	var preferredCount, ignoredCount int
+	_ = database.Conn().QueryRow(`
+		SELECT COUNT(*) FROM releases WHERE system_id = ? AND is_preferred = 1
+	`, systemID).Scan(&preferredCount)
+	_ = database.Conn().QueryRow(`
+		SELECT COUNT(*) FROM releases WHERE system_id = ? AND is_preferred = 0
+	`, systemID).Scan(&ignoredCount)
+
+	fmt.Printf("\nResults:\n")
+	fmt.Printf("  Preferred releases: %d\n", preferredCount)
+	fmt.Printf("  Ignored variants: %d\n", ignoredCount)
+}
+
+func listPreferred(systemName string) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Get system ID
+	var systemID int64
+	err = database.Conn().QueryRow("SELECT id FROM systems WHERE name = ?", systemName).Scan(&systemID)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "System not found: %s\n", systemName)
+		os.Exit(1)
+	}
+
+	config := library.DefaultPreferenceConfig()
+	selector := library.NewPreferenceSelector(database.Conn(), config)
+
+	preferred, err := selector.GetPreferredReleases(systemID)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error getting preferred releases: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(preferred) == 0 {
+		fmt.Println("No preferred releases selected yet.")
+		fmt.Printf("Run: romman prefer rebuild %s\n", systemName)
+		return
+	}
+
+	fmt.Printf("Preferred releases for %s (%d):\n\n", systemName, len(preferred))
+	for _, r := range preferred {
+		fmt.Printf("  %s\n", r.Name)
 	}
 }

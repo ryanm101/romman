@@ -79,6 +79,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 4 {
+		if err := db.migrateV4(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -201,6 +206,24 @@ func (db *DB) migrateV3() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v3 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV4 adds preferred release tracking.
+func (db *DB) migrateV4() error {
+	schema := `
+		ALTER TABLE releases ADD COLUMN is_preferred INTEGER DEFAULT 0;
+		ALTER TABLE releases ADD COLUMN ignore_reason TEXT;
+
+		CREATE INDEX IF NOT EXISTS idx_releases_is_preferred ON releases(is_preferred);
+
+		INSERT INTO schema_version (version) VALUES (4);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v4 migration: %w", err)
 	}
 
 	return nil

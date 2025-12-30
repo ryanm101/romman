@@ -33,7 +33,7 @@ func TestSchemaVersion(t *testing.T) {
 	var version int
 	err = db.Conn().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version, "schema version should be 3")
+	assert.Equal(t, 4, version, "schema version should be 4")
 }
 
 func TestTablesExist(t *testing.T) {
@@ -67,7 +67,7 @@ func TestMigrationIdempotent(t *testing.T) {
 		_ = db.Close()
 	}
 
-	// Verify schema version is still 3
+	// Verify schema version is still 4
 	db, err := Open(dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -75,5 +75,5 @@ func TestMigrationIdempotent(t *testing.T) {
 	var version int
 	err = db.Conn().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version, "schema version should still be 3 after multiple opens")
+	assert.Equal(t, 4, version, "schema version should still be 4 after multiple opens")
 }
