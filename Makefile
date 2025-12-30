@@ -1,11 +1,17 @@
 .PHONY: all build test lint clean
 
-all: build
+all: build-all
 
-# Top-level targets that call workspace-specific makefiles
+# Build CLI (default)
 build:
 	$(MAKE) -C romman-cli build
 
+# Build all binaries
+build-all:
+	$(MAKE) -C romman-cli build
+	$(MAKE) -C romman-tui build
+
+# Tests
 test:
 	$(MAKE) -C romman-lib test
 	$(MAKE) -C romman-cli test
@@ -14,20 +20,17 @@ test-short:
 	$(MAKE) -C romman-lib test-short
 	$(MAKE) -C romman-cli test-short
 
+# Lint
 lint:
 	$(MAKE) -C romman-lib lint
 	$(MAKE) -C romman-cli lint
+	$(MAKE) -C romman-tui lint
 
 clean:
 	$(MAKE) -C romman-cli clean
+	$(MAKE) -C romman-tui clean
 	rm -rf bin/
 
-# Convenience targets
-dev: test-short build
+# Convenience
+dev: test-short build-all
 
-# Build all binaries
-build-all: build
-
-# Run the CLI
-run:
-	./bin/romman $(ARGS)
