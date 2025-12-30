@@ -69,6 +69,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 2 {
+		if err := db.migrateV2(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -117,6 +122,65 @@ func (db *DB) migrateV1() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v1 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV2 adds library scanning tables.
+func (db *DB) migrateV2() error {
+	schema := `
+		-- Libraries represent ROM collection directories
+		CREATE TABLE IF NOT EXISTS libraries (
+			id INTEGER PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			root_path TEXT NOT NULL,
+			system_id INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_scan_at DATETIME,
+			FOREIGN KEY(system_id) REFERENCES systems(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_libraries_system_id ON libraries(system_id);
+
+		-- Scanned files with hash cache
+		CREATE TABLE IF NOT EXISTS scanned_files (
+			id INTEGER PRIMARY KEY,
+			library_id INTEGER NOT NULL,
+			path TEXT NOT NULL,
+			size INTEGER NOT NULL,
+			mtime INTEGER NOT NULL,
+			sha1 TEXT,
+			crc32 TEXT,
+			archive_path TEXT,  -- path within zip if applicable
+			scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+			UNIQUE(library_id, path, archive_path)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_scanned_files_library_id ON scanned_files(library_id);
+		CREATE INDEX IF NOT EXISTS idx_scanned_files_sha1 ON scanned_files(sha1);
+		CREATE INDEX IF NOT EXISTS idx_scanned_files_crc32 ON scanned_files(crc32);
+
+		-- Matches between scanned files and rom_entries
+		CREATE TABLE IF NOT EXISTS matches (
+			id INTEGER PRIMARY KEY,
+			scanned_file_id INTEGER NOT NULL,
+			rom_entry_id INTEGER NOT NULL,
+			match_type TEXT NOT NULL,  -- 'sha1' or 'crc32'
+			FOREIGN KEY(scanned_file_id) REFERENCES scanned_files(id) ON DELETE CASCADE,
+			FOREIGN KEY(rom_entry_id) REFERENCES rom_entries(id) ON DELETE CASCADE,
+			UNIQUE(scanned_file_id, rom_entry_id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_matches_scanned_file_id ON matches(scanned_file_id);
+		CREATE INDEX IF NOT EXISTS idx_matches_rom_entry_id ON matches(rom_entry_id);
+
+		INSERT INTO schema_version (version) VALUES (2);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v2 migration: %w", err)
 	}
 
 	return nil

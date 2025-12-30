@@ -85,6 +85,108 @@ var SystemMapping = map[string]string{
 	"fbalpha": "fba",
 }
 
+// DirectoryNameMapping maps common ROM folder names to system IDs.
+// Keys are lowercase directory names.
+var DirectoryNameMapping = map[string]string{
+	// Nintendo
+	"nes":            "nes",
+	"famicom":        "nes",
+	"fc":             "nes",
+	"snes":           "snes",
+	"superfamicom":   "snes",
+	"sfc":            "snes",
+	"gameboy":        "gb",
+	"gb":             "gb",
+	"gbc":            "gbc",
+	"gameboycolor":   "gbc",
+	"gba":            "gba",
+	"gameboyadvance": "gba",
+	"n64":            "n64",
+	"nintendo64":     "n64",
+	"nds":            "nds",
+	"ds":             "nds",
+	"3ds":            "3ds",
+	"gamecube":       "gc",
+	"gc":             "gc",
+	"wii":            "wii",
+
+	// Sega
+	"megadrive":    "md",
+	"mega-drive":   "md",
+	"genesis":      "md",
+	"md":           "md",
+	"sms":          "sms",
+	"mastersystem": "sms",
+	"gamegear":     "gg",
+	"gg":           "gg",
+	"32x":          "32x",
+	"segacd":       "segacd",
+	"sega-cd":      "segacd",
+	"saturn":       "saturn",
+	"dreamcast":    "dc",
+	"dc":           "dc",
+
+	// Sony
+	"psx":          "psx",
+	"ps1":          "psx",
+	"playstation":  "psx",
+	"ps2":          "ps2",
+	"playstation2": "ps2",
+	"psp":          "psp",
+	"vita":         "vita",
+
+	// Atari
+	"atari":     "atari2600",
+	"atari2600": "atari2600",
+	"2600":      "atari2600",
+	"atari5200": "atari5200",
+	"5200":      "atari5200",
+	"atari7800": "atari7800",
+	"7800":      "atari7800",
+	"lynx":      "atarilynx",
+	"atarilynx": "atarilynx",
+	"jaguar":    "atarijaguar",
+
+	// Other
+	"amiga":        "amiga",
+	"c64":          "c64",
+	"commodore64":  "c64",
+	"mame":         "mame",
+	"arcade":       "mame",
+	"fbneo":        "fbneo",
+	"neogeo":       "neogeo",
+	"pce":          "pce",
+	"pcengine":     "pce",
+	"turbografx":   "pce",
+	"turbografx16": "pce",
+	"wonderswan":   "wswan",
+	"coleco":       "coleco",
+	"vectrex":      "vectrex",
+	"msx":          "msx",
+}
+
+// DetectSystemFromDirName attempts to match a directory name to a known system.
+// Returns the system ID and true if found, empty string and false otherwise.
+func DetectSystemFromDirName(dirName string) (string, bool) {
+	// Normalize: lowercase and remove common separators
+	normalized := strings.ToLower(dirName)
+	normalized = strings.ReplaceAll(normalized, "-", "")
+	normalized = strings.ReplaceAll(normalized, "_", "")
+	normalized = strings.ReplaceAll(normalized, " ", "")
+
+	// Try exact match first
+	if sys, ok := DirectoryNameMapping[normalized]; ok {
+		return sys, true
+	}
+
+	// Try original lowercase
+	if sys, ok := DirectoryNameMapping[strings.ToLower(dirName)]; ok {
+		return sys, true
+	}
+
+	return "", false
+}
+
 // nonAlphaNum strips non-alphanumeric chars for fuzzy matching
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
 

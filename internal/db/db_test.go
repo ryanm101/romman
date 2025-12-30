@@ -33,7 +33,7 @@ func TestSchemaVersion(t *testing.T) {
 	var version int
 	err = db.Conn().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 1, version, "schema version should be 1")
+	assert.Equal(t, 2, version, "schema version should be 2")
 }
 
 func TestTablesExist(t *testing.T) {
@@ -44,7 +44,7 @@ func TestTablesExist(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	tables := []string{"systems", "releases", "rom_entries", "schema_version"}
+	tables := []string{"systems", "releases", "rom_entries", "schema_version", "libraries", "scanned_files", "matches"}
 	for _, table := range tables {
 		var name string
 		err := db.Conn().QueryRow(
@@ -67,7 +67,7 @@ func TestMigrationIdempotent(t *testing.T) {
 		_ = db.Close()
 	}
 
-	// Verify schema version is still 1
+	// Verify schema version is still 2
 	db, err := Open(dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -75,5 +75,5 @@ func TestMigrationIdempotent(t *testing.T) {
 	var version int
 	err = db.Conn().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 1, version, "schema version should still be 1 after multiple opens")
+	assert.Equal(t, 2, version, "schema version should still be 2 after multiple opens")
 }
