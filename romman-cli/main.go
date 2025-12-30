@@ -6,14 +6,23 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
+	"github.com/ryanm/romman-lib/config"
 	"github.com/ryanm/romman-lib/dat"
 	"github.com/ryanm/romman-lib/db"
 	"github.com/ryanm/romman-lib/library"
 )
 
-const defaultDBPath = "romman.db"
+var cfg *config.Config
 
 func main() {
+	// Load config
+	var err error
+	cfg, err = config.Load()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
+		cfg = config.DefaultConfig()
+	}
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -23,14 +32,14 @@ func main() {
 	case "dat":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: romman dat <command>")
-			fmt.Println("Commands: import")
+			fmt.Println("Commands: import, scan")
 			os.Exit(1)
 		}
 		handleDatCommand(os.Args[2:])
 	case "systems":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: romman systems <command>")
-			fmt.Println("Commands: list, info")
+			fmt.Println("Commands: list, info, status")
 			os.Exit(1)
 		}
 		handleSystemsCommand(os.Args[2:])
@@ -86,12 +95,15 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  dat import <file>                   Import a DAT file")
+	fmt.Println("  dat scan                            Auto-import DATs from dat_dir")
 	fmt.Println("  systems list                        List all systems")
 	fmt.Println("  systems info <name>                 Show system details")
+	fmt.Println("  systems status                      Show all systems summary")
 	fmt.Println("  library add <name> <path> <system>  Add a library")
 	fmt.Println("  library list                        List all libraries")
 	fmt.Println("  library discover <dir> [--add]      Auto-detect libraries from subdirs")
 	fmt.Println("  library scan <name>                 Scan a library for ROMs")
+	fmt.Println("  library scan-all                    Scan all libraries")
 	fmt.Println("  library status <name>               Show release status")
 	fmt.Println("  library unmatched <name>            Show unmatched files")
 	fmt.Println("  duplicates list <library>           List duplicate files")
@@ -107,10 +119,7 @@ func printUsage() {
 }
 
 func getDBPath() string {
-	if path := os.Getenv("ROMMAN_DB"); path != "" {
-		return path
-	}
-	return defaultDBPath
+	return cfg.GetDBPath()
 }
 
 func openDB() (*db.DB, error) {
@@ -130,6 +139,8 @@ func handleDatCommand(args []string) {
 			os.Exit(1)
 		}
 		importDATs(args[1:])
+	case "scan":
+		scanDatDir()
 	default:
 		fmt.Printf("Unknown dat command: %s\n", args[0])
 		os.Exit(1)
@@ -185,6 +196,8 @@ func handleSystemsCommand(args []string) {
 			os.Exit(1)
 		}
 		showSystemInfo(args[1])
+	case "status":
+		showSystemsStatus()
 	default:
 		fmt.Printf("Unknown systems command: %s\n", args[0])
 		os.Exit(1)
@@ -317,6 +330,8 @@ func handleLibraryCommand(args []string) {
 		}
 		autoAdd := len(args) >= 3 && args[2] == "--add"
 		discoverLibraries(args[1], autoAdd)
+	case "scan-all":
+		scanAllLibraries()
 	default:
 		fmt.Printf("Unknown library command: %s\n", args[0])
 		os.Exit(1)
@@ -934,4 +949,138 @@ func handleExportCommand(args []string) {
 	} else {
 		fmt.Print(string(data))
 	}
+}
+
+func scanDatDir() {
+	datDir := cfg.GetDatDir()
+	if datDir == "" {
+		fmt.Println("No dat_dir configured in .romman.yaml")
+		fmt.Println("Set dat_dir or use: romman dat import <file>")
+		os.Exit(1)
+	}
+
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	importer := dat.NewImporter(database.Conn())
+
+	// Find all .dat files in dat_dir
+	entries, err := os.ReadDir(datDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error reading dat_dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Scanning DAT directory: %s\n\n", datDir)
+
+	imported := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(entry.Name())
+		if ext != ".dat" && ext != ".xml" {
+			continue
+		}
+
+		path := filepath.Join(datDir, entry.Name())
+		fmt.Printf("Importing %s...\n", entry.Name())
+
+		result, err := importer.Import(path)
+		if err != nil {
+			fmt.Printf("  Error: %v\n", err)
+			continue
+		}
+
+		status := "updated"
+		if result.IsNewSystem {
+			status = "created"
+		}
+		fmt.Printf("  System: %s (%s) - %d games\n", result.SystemName, status, result.GamesImported)
+		imported++
+	}
+
+	fmt.Printf("\nImported %d DAT files\n", imported)
+}
+
+func scanAllLibraries() {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	scanner := library.NewScanner(database.Conn())
+
+	libs, err := manager.List()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error listing libraries: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(libs) == 0 {
+		fmt.Println("No libraries configured.")
+		return
+	}
+
+	fmt.Printf("Scanning %d libraries...\n\n", len(libs))
+
+	for _, lib := range libs {
+		fmt.Printf("Scanning: %s\n", lib.Name)
+		result, err := scanner.Scan(lib.Name)
+		if err != nil {
+			fmt.Printf("  Error: %v\n", err)
+			continue
+		}
+		fmt.Printf("  Files: %d, Matches: %d, Unmatched: %d\n",
+			result.FilesScanned, result.MatchesFound, result.UnmatchedFiles)
+	}
+
+	fmt.Println("\nDone.")
+}
+
+func showSystemsStatus() {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	rows, err := database.Conn().Query(`
+		SELECT 
+			s.name,
+			COUNT(DISTINCT r.id) as releases,
+			COUNT(DISTINCT CASE WHEN r.is_preferred = 1 THEN r.id END) as preferred,
+			(SELECT COUNT(*) FROM libraries WHERE system_id = s.id) as libraries
+		FROM systems s
+		LEFT JOIN releases r ON r.system_id = s.id
+		GROUP BY s.id
+		ORDER BY s.name
+	`)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error querying systems: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = rows.Close() }()
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "SYSTEM\tRELEASES\tPREFERRED\tLIBRARIES")
+	_, _ = fmt.Fprintln(w, "------\t--------\t---------\t---------")
+
+	for rows.Next() {
+		var name string
+		var releases, preferred, libraries int
+		if err := rows.Scan(&name, &releases, &preferred, &libraries); err != nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%d\n", name, releases, preferred, libraries)
+	}
+	_ = w.Flush()
 }
