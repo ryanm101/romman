@@ -106,6 +106,8 @@ func printUsage() {
 	fmt.Println("  library scan-all                    Scan all libraries")
 	fmt.Println("  library status <name>               Show release status")
 	fmt.Println("  library unmatched <name>            Show unmatched files")
+	fmt.Println("  library rename <name> [--dry-run]   Rename files to DAT names")
+	fmt.Println("  library verify <name>               Check file integrity")
 	fmt.Println("  duplicates list <library>           List duplicate files")
 	fmt.Println("  cleanup plan <lib> <quarantine>     Generate cleanup plan")
 	fmt.Println("  cleanup exec <plan> [--dry-run]     Execute cleanup plan")
@@ -332,6 +334,19 @@ func handleLibraryCommand(args []string) {
 		discoverLibraries(args[1], autoAdd)
 	case "scan-all":
 		scanAllLibraries()
+	case "rename":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman library rename <name> [--dry-run]")
+			os.Exit(1)
+		}
+		dryRun := len(args) >= 3 && args[2] == "--dry-run"
+		renameLibraryFiles(args[1], dryRun)
+	case "verify":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman library verify <name>")
+			os.Exit(1)
+		}
+		verifyLibrary(args[1])
 	default:
 		fmt.Printf("Unknown library command: %s\n", args[0])
 		os.Exit(1)
@@ -1083,4 +1098,87 @@ func showSystemsStatus() {
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%d\n", name, releases, preferred, libraries)
 	}
 	_ = w.Flush()
+}
+
+func renameLibraryFiles(libraryName string, dryRun bool) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	renamer := library.NewRenamer(database.Conn(), manager)
+
+	mode := "LIVE"
+	if dryRun {
+		mode = "DRY-RUN"
+	}
+	fmt.Printf("Renaming files in %s [%s]...\n\n", libraryName, mode)
+
+	result, err := renamer.Rename(libraryName, dryRun)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Show actions
+	for _, action := range result.Actions {
+		switch action.Status {
+		case "pending":
+			fmt.Printf("  RENAME: %s\n      -> %s\n", action.OldPath, action.NewPath)
+		case "done":
+			fmt.Printf("  RENAMED: %s\n       -> %s\n", action.OldPath, action.NewPath)
+		case "skipped":
+			// Only show skipped if verbose needed
+		case "error":
+			fmt.Printf("  ERROR: %s: %s\n", action.OldPath, action.Error)
+		}
+	}
+
+	// Summary
+	if dryRun {
+		pending := len(result.Actions) - result.Skipped
+		fmt.Printf("\nWould rename: %d files\n", pending)
+		fmt.Printf("Skipped: %d (already correct or target exists)\n", result.Skipped)
+	} else {
+		fmt.Printf("\nRenamed: %d files\n", result.Renamed)
+		fmt.Printf("Skipped: %d, Errors: %d\n", result.Skipped, result.Errors)
+	}
+}
+
+func verifyLibrary(libraryName string) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	checker := library.NewIntegrityChecker(database.Conn(), manager)
+
+	fmt.Printf("Verifying library: %s\n\n", libraryName)
+
+	result, err := checker.Check(libraryName)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Show issues
+	for _, issue := range result.Issues {
+		fmt.Printf("  [%s] %s: %s\n", issue.IssueType, issue.Path, issue.Details)
+	}
+
+	// Summary
+	fmt.Println()
+	fmt.Printf("Files checked: %d\n", result.FilesChecked)
+	fmt.Printf("OK: %d, Changed: %d, Missing: %d, Incomplete: %d\n",
+		result.OK, result.Changed, result.Missing, result.Incomplete)
+
+	if len(result.Issues) == 0 {
+		fmt.Println("\n✓ All files verified OK")
+	}
 }
