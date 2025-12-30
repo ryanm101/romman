@@ -27,6 +27,13 @@ type model struct {
 	width     int
 	height    int
 	err       error
+
+	// Detail view
+	inDetail     bool
+	detailFilter detailFilter
+	detailItems  []detailItem
+	detailCursor int
+	selectedLib  string
 }
 
 type panel int
@@ -36,6 +43,15 @@ const (
 	panelLibraries
 )
 
+type detailFilter int
+
+const (
+	filterMatched detailFilter = iota
+	filterMissing
+	filterFlagged
+	filterUnmatched
+)
+
 type systemInfo struct {
 	Name         string
 	DatName      string
@@ -43,11 +59,19 @@ type systemInfo struct {
 }
 
 type libraryInfo struct {
-	Name    string
-	System  string
-	Path    string
-	Matched int
-	Total   int
+	Name       string
+	System     string
+	Path       string
+	SystemID   int64
+	GamesInLib int
+	TotalGames int
+}
+
+type detailItem struct {
+	Name      string
+	Path      string
+	MatchType string
+	Flags     string
 }
 
 func initialModel() model {
@@ -72,6 +96,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// Detail view keys
+		if m.inDetail {
+			switch msg.String() {
+			case "q", "esc", "backspace":
+				m.inDetail = false
+				m.detailItems = nil
+				return m, nil
+			case "up", "k":
+				if m.detailCursor > 0 {
+					m.detailCursor--
+				}
+			case "down", "j":
+				if m.detailCursor < len(m.detailItems)-1 {
+					m.detailCursor++
+				}
+			case "1", "m": // Matched
+				m.detailFilter = filterMatched
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "2", "i": // mIssing
+				m.detailFilter = filterMissing
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "3", "f": // Flagged
+				m.detailFilter = filterFlagged
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "4", "u": // Unmatched
+				m.detailFilter = filterUnmatched
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			}
+			return m, nil
+		}
+
+		// Main view keys
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -91,6 +151,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < maxItems-1 {
 				m.cursor++
 			}
+		case "enter":
+			if m.panel == panelLibraries && m.cursor < len(m.libraries) {
+				m.inDetail = true
+				m.selectedLib = m.libraries[m.cursor].Name
+				m.detailFilter = filterMatched
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			}
 		case "s":
 			if m.panel == panelLibraries && m.cursor < len(m.libraries) {
 				return m, scanLibrary(m.libraries[m.cursor].Name)
@@ -109,6 +177,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scanCompleteMsg:
 		return m, loadLibraries
+
+	case detailMsg:
+		m.detailItems = msg.items
 	}
 
 	return m, nil
@@ -127,6 +198,14 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
+	if m.inDetail {
+		return m.viewDetail()
+	}
+
+	return m.viewMain()
+}
+
+func (m model) viewMain() string {
 	// Styles
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -159,7 +238,7 @@ func (m model) View() string {
 		systemsContent += "No systems imported.\nUse CLI: romman dat import <file>"
 	} else {
 		for i, s := range m.systems {
-			line := fmt.Sprintf("%-8s %d releases", s.Name, s.ReleaseCount)
+			line := fmt.Sprintf("%-8s %d games", s.Name, s.ReleaseCount)
 			if m.panel == panelSystems && i == m.cursor {
 				line = selectedStyle.Render(line)
 			}
@@ -181,10 +260,10 @@ func (m model) View() string {
 	} else {
 		for i, lib := range m.libraries {
 			pct := 0
-			if lib.Total > 0 {
-				pct = lib.Matched * 100 / lib.Total
+			if lib.TotalGames > 0 {
+				pct = lib.GamesInLib * 100 / lib.TotalGames
 			}
-			line := fmt.Sprintf("%-12s %3d%% (%d/%d)", lib.Name, pct, lib.Matched, lib.Total)
+			line := fmt.Sprintf("%-12s %3d%% (%d/%d)", lib.Name, pct, lib.GamesInLib, lib.TotalGames)
 			if m.panel == panelLibraries && i == m.cursor {
 				line = selectedStyle.Render(line)
 			}
@@ -201,11 +280,92 @@ func (m model) View() string {
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	help := "Tab: switch panel | j/k: navigate | s: scan | r: refresh | q: quit"
+	help := "Tab: switch | j/k: nav | Enter: details | s: scan | r: refresh | q: quit"
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("🎮 ROM Manager"),
 		content,
+		helpStyle.Render(help),
+	)
+}
+
+func (m model) viewDetail() string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("205"))
+
+	// Filter tabs
+	tabStyle := lipgloss.NewStyle().Padding(0, 2)
+	activeTabStyle := tabStyle.Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
+
+	tabs := []struct {
+		name   string
+		filter detailFilter
+	}{
+		{"[1] Matched", filterMatched},
+		{"[2] Missing", filterMissing},
+		{"[3] Flagged", filterFlagged},
+		{"[4] Unmatched", filterUnmatched},
+	}
+
+	var tabBar string
+	for _, t := range tabs {
+		style := tabStyle
+		if t.filter == m.detailFilter {
+			style = activeTabStyle
+		}
+		tabBar += style.Render(t.name) + " "
+	}
+
+	// Content
+	contentStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(1).
+		Width(m.width - 4).
+		Height(m.height - 8)
+
+	selectedStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("57")).
+		Foreground(lipgloss.Color("255"))
+
+	var content string
+	if len(m.detailItems) == 0 {
+		content = "No items found."
+	} else {
+		maxShow := m.height - 12
+		start := 0
+		if m.detailCursor >= maxShow {
+			start = m.detailCursor - maxShow + 1
+		}
+		end := start + maxShow
+		if end > len(m.detailItems) {
+			end = len(m.detailItems)
+		}
+
+		for i := start; i < end; i++ {
+			item := m.detailItems[i]
+			line := item.Name
+			if item.Flags != "" {
+				line += fmt.Sprintf(" [%s]", item.Flags)
+			}
+			if i == m.detailCursor {
+				line = selectedStyle.Render(line)
+			}
+			content += line + "\n"
+		}
+		content += fmt.Sprintf("\n(%d/%d)", m.detailCursor+1, len(m.detailItems))
+	}
+
+	// Help
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1)
+	help := "1-4: filter | j/k: nav | Esc: back | q: quit"
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(fmt.Sprintf("📁 %s", m.selectedLib)),
+		tabBar,
+		contentStyle.Render(content),
 		helpStyle.Render(help),
 	)
 }
@@ -222,6 +382,10 @@ type librariesMsg struct {
 }
 
 type scanCompleteMsg struct{}
+
+type detailMsg struct {
+	items []detailItem
+}
 
 // Commands
 func loadSystems() tea.Msg {
@@ -263,11 +427,13 @@ func loadLibraries() tea.Msg {
 	defer func() { _ = database.Close() }()
 
 	rows, err := database.Conn().Query(`
-		SELECT l.name, s.name, l.root_path,
-			(SELECT COUNT(*) FROM scanned_files sf 
+		SELECT l.name, s.name, l.root_path, l.system_id,
+			(SELECT COUNT(DISTINCT re.release_id) 
+			 FROM scanned_files sf 
 			 JOIN matches m ON m.scanned_file_id = sf.id 
-			 WHERE sf.library_id = l.id) as matched,
-			(SELECT COUNT(*) FROM scanned_files WHERE library_id = l.id) as total
+			 JOIN rom_entries re ON re.id = m.rom_entry_id
+			 WHERE sf.library_id = l.id) as games_in_lib,
+			(SELECT COUNT(*) FROM releases WHERE system_id = l.system_id) as total_games
 		FROM libraries l
 		JOIN systems s ON s.id = l.system_id
 		ORDER BY l.name
@@ -280,13 +446,116 @@ func loadLibraries() tea.Msg {
 	var libraries []libraryInfo
 	for rows.Next() {
 		var lib libraryInfo
-		if err := rows.Scan(&lib.Name, &lib.System, &lib.Path, &lib.Matched, &lib.Total); err != nil {
+		if err := rows.Scan(&lib.Name, &lib.System, &lib.Path, &lib.SystemID, &lib.GamesInLib, &lib.TotalGames); err != nil {
 			return librariesMsg{err: err}
 		}
 		libraries = append(libraries, lib)
 	}
 
 	return librariesMsg{libraries: libraries}
+}
+
+func loadDetail(libName string, filter detailFilter) tea.Cmd {
+	return func() tea.Msg {
+		database, err := db.Open(getDBPath())
+		if err != nil {
+			return detailMsg{}
+		}
+		defer func() { _ = database.Close() }()
+
+		var items []detailItem
+
+		switch filter {
+		case filterMatched:
+			// Files that matched with sha1 or crc32
+			rows, err := database.Conn().Query(`
+				SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, '')
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				JOIN releases r ON r.id = re.release_id
+				JOIN libraries l ON l.id = sf.library_id
+				WHERE l.name = ? AND m.match_type IN ('sha1', 'crc32')
+				ORDER BY r.name
+			`, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Name, &item.Path, &item.MatchType, &item.Flags)
+					items = append(items, item)
+				}
+			}
+
+		case filterMissing:
+			// Releases in system that have no matched files
+			rows, err := database.Conn().Query(`
+				SELECT r.name
+				FROM releases r
+				JOIN libraries l ON l.system_id = r.system_id
+				WHERE l.name = ?
+				AND r.id NOT IN (
+					SELECT DISTINCT re.release_id
+					FROM scanned_files sf
+					JOIN matches m ON m.scanned_file_id = sf.id
+					JOIN rom_entries re ON re.id = m.rom_entry_id
+					WHERE sf.library_id = l.id
+				)
+				ORDER BY r.name
+			`, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Name)
+					items = append(items, item)
+				}
+			}
+
+		case filterFlagged:
+			// Files matched by name with flags (cracked, bad-dump, etc)
+			rows, err := database.Conn().Query(`
+				SELECT r.name, sf.path, m.match_type, m.flags
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				JOIN releases r ON r.id = re.release_id
+				JOIN libraries l ON l.id = sf.library_id
+				WHERE l.name = ? AND m.flags IS NOT NULL AND m.flags != ''
+				ORDER BY r.name
+			`, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Name, &item.Path, &item.MatchType, &item.Flags)
+					items = append(items, item)
+				}
+			}
+
+		case filterUnmatched:
+			// Scanned files with no match
+			rows, err := database.Conn().Query(`
+				SELECT sf.path
+				FROM scanned_files sf
+				JOIN libraries l ON l.id = sf.library_id
+				LEFT JOIN matches m ON m.scanned_file_id = sf.id
+				WHERE l.name = ? AND m.id IS NULL
+				ORDER BY sf.path
+			`, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Path)
+					item.Name = item.Path
+					items = append(items, item)
+				}
+			}
+		}
+
+		return detailMsg{items: items}
+	}
 }
 
 func scanLibrary(name string) tea.Cmd {
