@@ -62,6 +62,14 @@ func main() {
 			os.Exit(1)
 		}
 		handlePreferCommand(os.Args[2:])
+	case "export":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: romman export <library> <report> <format> [file]")
+			fmt.Println("Reports: matched, missing, preferred, unmatched")
+			fmt.Println("Formats: csv, json")
+			os.Exit(1)
+		}
+		handleExportCommand(os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -91,6 +99,7 @@ func printUsage() {
 	fmt.Println("  cleanup exec <plan> [--dry-run]     Execute cleanup plan")
 	fmt.Println("  prefer rebuild <system>             Rebuild preferred releases")
 	fmt.Println("  prefer list <system>                List preferred releases")
+	fmt.Println("  export <lib> <report> <fmt> [file]  Export report (csv/json)")
 	fmt.Println("  help                                Show this help")
 	fmt.Println()
 	fmt.Println("Environment:")
@@ -865,5 +874,64 @@ func listPreferred(systemName string) {
 	fmt.Printf("Preferred releases for %s (%d):\n\n", systemName, len(preferred))
 	for _, r := range preferred {
 		fmt.Printf("  %s\n", r.Name)
+	}
+}
+
+func handleExportCommand(args []string) {
+	if len(args) < 3 {
+		fmt.Println("Usage: romman export <library> <report> <format> [file]")
+		os.Exit(1)
+	}
+
+	libraryName := args[0]
+	reportType := library.ReportType(args[1])
+	format := library.ExportFormat(args[2])
+
+	// Validate report type
+	switch reportType {
+	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched:
+		// valid
+	default:
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown report type: %s\n", args[1])
+		fmt.Println("Valid reports: matched, missing, preferred, unmatched")
+		os.Exit(1)
+	}
+
+	// Validate format
+	switch format {
+	case library.FormatCSV, library.FormatJSON:
+		// valid
+	default:
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown format: %s\n", args[2])
+		fmt.Println("Valid formats: csv, json")
+		os.Exit(1)
+	}
+
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	exporter := library.NewExporter(database.Conn(), manager)
+
+	data, err := exporter.Export(libraryName, reportType, format)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error exporting: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Output to file or stdout
+	if len(args) >= 4 {
+		outputFile := args[3]
+		if err := os.WriteFile(outputFile, data, 0644); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Exported %s %s to %s\n", reportType, format, outputFile)
+	} else {
+		fmt.Print(string(data))
 	}
 }
