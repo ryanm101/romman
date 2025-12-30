@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -32,8 +33,14 @@ type model struct {
 	inDetail     bool
 	detailFilter detailFilter
 	detailItems  []detailItem
+	detailCounts map[detailFilter]int
 	detailCursor int
 	selectedLib  string
+	lastScanAt   string
+
+	// Search
+	searching   bool
+	searchQuery string
 }
 
 type panel int
@@ -66,6 +73,7 @@ type libraryInfo struct {
 	SystemID   int64
 	GamesInLib int
 	TotalGames int
+	LastScanAt string
 }
 
 type detailItem struct {
@@ -97,6 +105,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// Search mode handling
+		if m.searching {
+			switch msg.String() {
+			case "enter", "esc":
+				m.searching = false
+				return m, nil
+			case "backspace":
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+				}
+			default:
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+				}
+			}
+			// Reset cursor on search change
+			m.detailCursor = 0
+			return m, nil
+		}
+
 		// Detail view keys
 		if m.inDetail {
 			switch msg.String() {
@@ -109,9 +137,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailCursor--
 				}
 			case "down", "j":
-				if m.detailCursor < len(m.detailItems)-1 {
+				if m.detailCursor < len(m.getFilteredItems())-1 {
 					m.detailCursor++
 				}
+			case "pgup":
+				m.detailCursor -= 10
+				if m.detailCursor < 0 {
+					m.detailCursor = 0
+				}
+			case "pgdown":
+				m.detailCursor += 10
+				filtered := m.getFilteredItems()
+				if m.detailCursor >= len(filtered) {
+					m.detailCursor = len(filtered) - 1
+				}
+				if m.detailCursor < 0 {
+					m.detailCursor = 0
+				}
+			case "/":
+				m.searching = true
+				m.searchQuery = ""
+				return m, nil
 			case "1", "m": // Matched
 				m.detailFilter = filterMatched
 				m.detailCursor = 0
@@ -156,6 +202,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < maxItems-1 {
 				m.cursor++
 			}
+		case "pgup":
+			m.cursor -= 10
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case "pgdown":
+			m.cursor += 10
+			maxItems := m.maxItems()
+			if m.cursor >= maxItems {
+				m.cursor = maxItems - 1
+			}
 		case "enter":
 			if m.panel == panelLibraries && m.cursor < len(m.libraries) {
 				m.inDetail = true
@@ -185,9 +242,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case detailMsg:
 		m.detailItems = msg.items
+		m.detailCounts = msg.counts
 	}
 
 	return m, nil
+}
+
+func (m model) getFilteredItems() []detailItem {
+	if m.searchQuery == "" {
+		return m.detailItems
+	}
+	var filtered []detailItem
+	for _, item := range m.detailItems {
+		if strings.Contains(strings.ToLower(item.Name), strings.ToLower(m.searchQuery)) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (m model) maxItems() int {
@@ -268,7 +339,11 @@ func (m model) viewMain() string {
 			if lib.TotalGames > 0 {
 				pct = lib.GamesInLib * 100 / lib.TotalGames
 			}
-			line := fmt.Sprintf("%-12s %3d%% (%d/%d)", lib.Name, pct, lib.GamesInLib, lib.TotalGames)
+
+			// Progress bar with color
+			bar := renderProgressBar(pct, 15)
+			line := fmt.Sprintf("%-10s %s %3d%%", lib.Name, bar, pct)
+
 			if m.panel == panelLibraries && i == m.cursor {
 				line = selectedStyle.Render(line)
 			}
@@ -287,10 +362,19 @@ func (m model) viewMain() string {
 
 	help := "Tab: switch | j/k: nav | Enter: details | s: scan | r: refresh | q: quit"
 
+	// Status bar
+	statusStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	status := fmt.Sprintf(" DB: %s", getDBPath())
+
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("🎮 ROM Manager"),
 		content,
 		helpStyle.Render(help),
+		"\n",
+		statusStyle.Render(status),
 	)
 }
 
@@ -300,78 +384,152 @@ func (m model) viewDetail() string {
 		Foreground(lipgloss.Color("205"))
 
 	// Filter tabs
-	tabStyle := lipgloss.NewStyle().Padding(0, 2)
-	activeTabStyle := tabStyle.Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
+	tabStyle := lipgloss.NewStyle().Padding(0, 1)
+	activeTabStyle := tabStyle.Copy().Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
 
 	tabs := []struct {
 		name   string
 		filter detailFilter
 	}{
-		{"[1] Matched", filterMatched},
-		{"[2] Missing", filterMissing},
-		{"[3] Flagged", filterFlagged},
-		{"[4] Unmatched", filterUnmatched},
-		{"[5] Preferred", filterPreferred},
+		{"Matched", filterMatched},
+		{"Missing", filterMissing},
+		{"Flagged", filterFlagged},
+		{"Unmatched", filterUnmatched},
+		{"Preferred", filterPreferred},
 	}
 
 	var tabBar string
-	for _, t := range tabs {
+	for i, t := range tabs {
 		style := tabStyle
 		if t.filter == m.detailFilter {
 			style = activeTabStyle
 		}
-		tabBar += style.Render(t.name) + " "
+
+		count := 0
+		if m.detailCounts != nil {
+			count = m.detailCounts[t.filter]
+		}
+
+		label := fmt.Sprintf("[%d] %s (%d)", i+1, t.name, count)
+		tabBar += style.Render(label) + " "
 	}
 
 	// Content
 	contentStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		Padding(1).
+		Padding(0, 1).
 		Width(m.width - 4).
-		Height(m.height - 8)
+		Height(m.height - 10)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("57")).
 		Foreground(lipgloss.Color("255"))
 
+	// Item styles
+	matchedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	missingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	flaggedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	unmatchedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+
+	filteredItems := m.getFilteredItems()
+
 	var content string
-	if len(m.detailItems) == 0 {
-		content = "No items found."
+	if len(filteredItems) == 0 {
+		content = "\n  No items found."
 	} else {
-		maxShow := m.height - 12
+		maxShow := m.height - 15
 		start := 0
 		if m.detailCursor >= maxShow {
 			start = m.detailCursor - maxShow + 1
 		}
 		end := start + maxShow
-		if end > len(m.detailItems) {
-			end = len(m.detailItems)
+		if end > len(filteredItems) {
+			end = len(filteredItems)
 		}
 
 		for i := start; i < end; i++ {
-			item := m.detailItems[i]
+			item := filteredItems[i]
+
+			var style lipgloss.Style
+			switch m.detailFilter {
+			case filterMatched:
+				style = matchedStyle
+			case filterMissing:
+				style = missingStyle
+			case filterFlagged:
+				style = flaggedStyle
+			case filterUnmatched:
+				style = unmatchedStyle
+			case filterPreferred:
+				if item.Path != "" {
+					style = matchedStyle
+				} else {
+					style = missingStyle
+				}
+			}
+
 			line := item.Name
 			if item.Flags != "" {
 				line += fmt.Sprintf(" [%s]", item.Flags)
 			}
+
 			if i == m.detailCursor {
-				line = selectedStyle.Render(line)
+				line = selectedStyle.Render("> " + line)
+				if item.Path != "" {
+					line += "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(item.Path)
+				}
+				if item.MatchType != "" {
+					line += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("57")).Render("("+item.MatchType+")")
+				}
+			} else {
+				line = "  " + style.Render(line)
 			}
 			content += line + "\n"
 		}
-		content += fmt.Sprintf("\n(%d/%d)", m.detailCursor+1, len(m.detailItems))
+		content += fmt.Sprintf("\n  (%d/%d)", m.detailCursor+1, len(filteredItems))
+	}
+
+	// Status bar
+	statusStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+
+	dbPath := getDBPath()
+	lastScan := "Never"
+	for _, lib := range m.libraries {
+		if lib.Name == m.selectedLib {
+			if lib.LastScanAt != "" {
+				lastScan = lib.LastScanAt
+			}
+			break
+		}
+	}
+	status := fmt.Sprintf(" DB: %s | Last Scan: %s", dbPath, lastScan)
+	if m.searching {
+		status = fmt.Sprintf(" SEARCH: %s", m.searchQuery)
 	}
 
 	// Help
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
-	help := "1-4: filter | j/k: nav | Esc: back | q: quit"
+	help := "1-5: filter | /: search | j/k: nav | Esc: back | q: quit"
+
+	statsLine := ""
+	if m.detailCounts != nil {
+		statsLine = fmt.Sprintf("Matched: %d | Missing: %d | Flagged: %d",
+			m.detailCounts[filterMatched],
+			m.detailCounts[filterMissing],
+			m.detailCounts[filterFlagged])
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(fmt.Sprintf("📁 %s", m.selectedLib)),
-		tabBar,
+		lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render(statsLine),
+		"\n"+tabBar,
 		contentStyle.Render(content),
+		statusStyle.Render(status),
 		helpStyle.Render(help),
 	)
 }
@@ -390,7 +548,8 @@ type librariesMsg struct {
 type scanCompleteMsg struct{}
 
 type detailMsg struct {
-	items []detailItem
+	items  []detailItem
+	counts map[detailFilter]int
 }
 
 // Commands
@@ -439,7 +598,8 @@ func loadLibraries() tea.Msg {
 			 JOIN matches m ON m.scanned_file_id = sf.id 
 			 JOIN rom_entries re ON re.id = m.rom_entry_id
 			 WHERE sf.library_id = l.id) as games_in_lib,
-			(SELECT COUNT(*) FROM releases WHERE system_id = l.system_id) as total_games
+			(SELECT COUNT(*) FROM releases WHERE system_id = l.system_id) as total_games,
+			COALESCE(l.last_scan_at, '')
 		FROM libraries l
 		JOIN systems s ON s.id = l.system_id
 		ORDER BY l.name
@@ -452,7 +612,7 @@ func loadLibraries() tea.Msg {
 	var libraries []libraryInfo
 	for rows.Next() {
 		var lib libraryInfo
-		if err := rows.Scan(&lib.Name, &lib.System, &lib.Path, &lib.SystemID, &lib.GamesInLib, &lib.TotalGames); err != nil {
+		if err := rows.Scan(&lib.Name, &lib.System, &lib.Path, &lib.SystemID, &lib.GamesInLib, &lib.TotalGames, &lib.LastScanAt); err != nil {
 			return librariesMsg{err: err}
 		}
 		libraries = append(libraries, lib)
@@ -560,9 +720,18 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 			}
 
 		case filterPreferred:
-			// Preferred releases for the system
+			// Preferred releases for the system with match status
 			rows, err := database.Conn().Query(`
-				SELECT r.name
+				SELECT r.name, 
+					COALESCE((SELECT sf.path FROM scanned_files sf 
+					          JOIN matches m ON m.scanned_file_id = sf.id 
+							  JOIN rom_entries re ON re.id = m.rom_entry_id 
+							  WHERE re.release_id = r.id AND sf.library_id = l.id LIMIT 1), ''),
+					COALESCE((SELECT m.match_type FROM scanned_files sf 
+					          JOIN matches m ON m.scanned_file_id = sf.id 
+							  JOIN rom_entries re ON re.id = m.rom_entry_id 
+							  WHERE re.release_id = r.id AND sf.library_id = l.id LIMIT 1), ''),
+					'' as flags
 				FROM releases r
 				JOIN libraries l ON l.system_id = r.system_id
 				WHERE l.name = ? AND r.is_preferred = 1
@@ -572,13 +741,72 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 				defer func() { _ = rows.Close() }()
 				for rows.Next() {
 					var item detailItem
-					_ = rows.Scan(&item.Name)
+					_ = rows.Scan(&item.Name, &item.Path, &item.MatchType, &item.Flags)
 					items = append(items, item)
 				}
 			}
 		}
 
-		return detailMsg{items: items}
+		// Calculate counts for all filters
+		counts := make(map[detailFilter]int)
+		var c int
+
+		// Matched
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(DISTINCT re.release_id)
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
+			JOIN libraries l ON l.id = sf.library_id
+			WHERE l.name = ?
+		`, libName).Scan(&c)
+		counts[filterMatched] = c
+
+		// Missing
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(DISTINCT r.id)
+			FROM releases r
+			JOIN libraries l ON l.system_id = r.system_id
+			WHERE l.name = ? AND r.id NOT IN (
+				SELECT DISTINCT re.release_id
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				WHERE sf.library_id = l.id
+			)
+		`, libName).Scan(&c)
+		counts[filterMissing] = c
+
+		// Flagged
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(DISTINCT m.id)
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN libraries l ON l.id = sf.library_id
+			WHERE l.name = ? AND m.flags IS NOT NULL AND m.flags != ''
+		`, libName).Scan(&c)
+		counts[filterFlagged] = c
+
+		// Unmatched
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(*)
+			FROM scanned_files sf
+			JOIN libraries l ON l.id = sf.library_id
+			LEFT JOIN matches m ON m.scanned_file_id = sf.id
+			WHERE l.name = ? AND m.id IS NULL
+		`, libName).Scan(&c)
+		counts[filterUnmatched] = c
+
+		// Preferred
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(*)
+			FROM releases r
+			JOIN libraries l ON l.system_id = r.system_id
+			WHERE l.name = ? AND r.is_preferred = 1
+		`, libName).Scan(&c)
+		counts[filterPreferred] = c
+
+		return detailMsg{items: items, counts: counts}
 	}
 }
 
@@ -602,4 +830,29 @@ func getDBPath() string {
 		return path
 	}
 	return "romman.db"
+}
+
+func renderProgressBar(pct int, width int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+
+	fullChars := (pct * width) / 100
+	emptyChars := width - fullChars
+
+	filled := strings.Repeat("█", fullChars)
+	empty := strings.Repeat("░", emptyChars)
+
+	color := "2" // Green
+	if pct < 33 {
+		color = "1" // Red
+	} else if pct < 66 {
+		color = "3" // Yellow
+	}
+
+	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	return barStyle.Render(filled) + lipgloss.NewStyle().Foreground(lipgloss.Color("235")).Render(empty)
 }
