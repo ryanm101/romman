@@ -74,6 +74,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 3 {
+		if err := db.migrateV3(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -181,6 +186,21 @@ func (db *DB) migrateV2() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v2 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV3 adds flags column to matches for storing ROM status.
+func (db *DB) migrateV3() error {
+	schema := `
+		ALTER TABLE matches ADD COLUMN flags TEXT;
+
+		INSERT INTO schema_version (version) VALUES (3);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v3 migration: %w", err)
 	}
 
 	return nil

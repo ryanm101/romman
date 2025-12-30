@@ -35,6 +35,50 @@ type ScannedFile struct {
 	ArchivePath string // Path within zip, empty for regular files
 }
 
+// ignoredExtensions contains file extensions that should be skipped during scanning.
+// These are typically save files, state files, or other non-ROM data.
+var ignoredExtensions = map[string]bool{
+	// Save files
+	".srm": true, // SRAM save
+	".sav": true, // Generic save
+	".eep": true, // EEPROM save
+	".fla": true, // Flash save
+	".rtc": true, // Real-time clock
+
+	// State files
+	".state": true, // Save state
+	".st0":   true, // Save state slot 0
+	".st1":   true, // Save state slot 1
+	".st2":   true, // Save state slot 2
+	".st3":   true, // Save state slot 3
+	".st4":   true, // Save state slot 4
+	".st5":   true, // Save state slot 5
+	".st6":   true, // Save state slot 6
+	".st7":   true, // Save state slot 7
+	".st8":   true, // Save state slot 8
+	".st9":   true, // Save state slot 9
+	".oops":  true, // RetroArch undo state
+
+	// Thumbnails and metadata
+	".png":  true,
+	".jpg":  true,
+	".jpeg": true,
+	".txt":  true,
+	".nfo":  true,
+	".xml":  true,
+	".json": true,
+
+	// Playlists and config
+	".cfg": true,
+	".lpl": true, // RetroArch playlist
+	".opt": true, // Core options
+}
+
+// isIgnoredExtension returns true if the file extension should be skipped.
+func isIgnoredExtension(ext string) bool {
+	return ignoredExtensions[ext]
+}
+
 // Scanner handles library scanning operations.
 type Scanner struct {
 	db      *sql.DB
@@ -69,6 +113,11 @@ func (s *Scanner) Scan(libraryName string) (*ScanResult, error) {
 
 		ext := strings.ToLower(filepath.Ext(path))
 
+		// Skip non-ROM files (saves, states, thumbnails, etc.)
+		if isIgnoredExtension(ext) {
+			return nil
+		}
+
 		// Handle zip files
 		if ext == ".zip" {
 			zipResult, err := s.scanZipFile(lib, path, info)
@@ -100,6 +149,11 @@ func (s *Scanner) Scan(libraryName string) (*ScanResult, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk library: %w", err)
+	}
+
+	// Clean up stale scanned files (files that no longer exist or are now ignored)
+	if err := s.cleanupStaleFiles(lib); err != nil {
+		return nil, fmt.Errorf("failed to cleanup stale files: %w", err)
 	}
 
 	// Perform matching
@@ -280,6 +334,61 @@ func (s *Scanner) storeScannedFile(libraryID int64, path, archivePath string, si
 	return err
 }
 
+// cleanupStaleFiles removes scanned file entries that no longer exist or should be ignored.
+func (s *Scanner) cleanupStaleFiles(lib *Library) error {
+	// Get all scanned files for this library
+	rows, err := s.db.Query(`
+		SELECT id, path, archive_path FROM scanned_files WHERE library_id = ?
+	`, lib.ID)
+	if err != nil {
+		return err
+	}
+
+	var toDelete []int64
+	for rows.Next() {
+		var id int64
+		var path string
+		var archivePath sql.NullString
+		if err := rows.Scan(&id, &path, &archivePath); err != nil {
+			_ = rows.Close()
+			return err
+		}
+
+		// Check if file should be deleted
+		shouldDelete := false
+
+		// Check if extension is now ignored (for non-archive files)
+		if !archivePath.Valid || archivePath.String == "" {
+			ext := strings.ToLower(filepath.Ext(path))
+			if isIgnoredExtension(ext) {
+				shouldDelete = true
+			}
+		}
+
+		// Check if file still exists (only for non-archive files)
+		if !shouldDelete && (!archivePath.Valid || archivePath.String == "") {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				shouldDelete = true
+			}
+		}
+
+		if shouldDelete {
+			toDelete = append(toDelete, id)
+		}
+	}
+	_ = rows.Close()
+
+	// Delete stale entries
+	for _, id := range toDelete {
+		_, err := s.db.Exec("DELETE FROM scanned_files WHERE id = ?", id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 type matchResult struct {
 	MatchesFound   int
 	UnmatchedFiles int
@@ -289,6 +398,7 @@ type fileToMatch struct {
 	id    int64
 	sha1  string
 	crc32 string
+	path  string
 }
 
 func (s *Scanner) matchFiles(lib *Library) (*matchResult, error) {
@@ -307,7 +417,7 @@ func (s *Scanner) matchFiles(lib *Library) (*matchResult, error) {
 
 	// Get all scanned files - collect them first to avoid holding rows open during writes
 	rows, err := s.db.Query(`
-		SELECT id, sha1, crc32 FROM scanned_files WHERE library_id = ?
+		SELECT id, sha1, crc32, path FROM scanned_files WHERE library_id = ?
 	`, lib.ID)
 	if err != nil {
 		return nil, err
@@ -316,7 +426,7 @@ func (s *Scanner) matchFiles(lib *Library) (*matchResult, error) {
 	var files []fileToMatch
 	for rows.Next() {
 		var f fileToMatch
-		if err := rows.Scan(&f.id, &f.sha1, &f.crc32); err != nil {
+		if err := rows.Scan(&f.id, &f.sha1, &f.crc32, &f.path); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -324,9 +434,15 @@ func (s *Scanner) matchFiles(lib *Library) (*matchResult, error) {
 	}
 	_ = rows.Close()
 
+	// Build a map of normalized release names for fuzzy matching
+	releaseNames, err := s.buildReleaseNameIndex(lib.SystemID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build release index: %w", err)
+	}
+
 	// Now match each file
 	for _, f := range files {
-		matched, err := s.matchSingleFile(lib.SystemID, f.id, f.sha1, f.crc32)
+		matched, err := s.matchSingleFile(lib.SystemID, f, releaseNames)
 		if err != nil {
 			return nil, err
 		}
@@ -341,22 +457,50 @@ func (s *Scanner) matchFiles(lib *Library) (*matchResult, error) {
 	return result, nil
 }
 
-func (s *Scanner) matchSingleFile(systemID, fileID int64, sha1Hash, crc32Hash string) (bool, error) {
-	// Try SHA1 match first
+type releaseNameEntry struct {
+	releaseID  int64
+	romEntryID int64
+	romName    string
+	normalized string
+}
+
+func (s *Scanner) buildReleaseNameIndex(systemID int64) (map[string][]releaseNameEntry, error) {
+	rows, err := s.db.Query(`
+		SELECT r.id, re.id, re.name
+		FROM rom_entries re
+		JOIN releases r ON re.release_id = r.id
+		WHERE r.system_id = ?
+	`, systemID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	index := make(map[string][]releaseNameEntry)
+	for rows.Next() {
+		var entry releaseNameEntry
+		if err := rows.Scan(&entry.releaseID, &entry.romEntryID, &entry.romName); err != nil {
+			return nil, err
+		}
+		entry.normalized = NormalizeTitleForMatching(entry.romName)
+		index[entry.normalized] = append(index[entry.normalized], entry)
+	}
+
+	return index, nil
+}
+
+func (s *Scanner) matchSingleFile(systemID int64, f fileToMatch, releaseNames map[string][]releaseNameEntry) (bool, error) {
+	// Try SHA1 match first (exact match)
 	var romEntryID int64
 	err := s.db.QueryRow(`
 		SELECT re.id FROM rom_entries re
 		JOIN releases r ON re.release_id = r.id
 		WHERE r.system_id = ? AND LOWER(re.sha1) = LOWER(?)
-	`, systemID, sha1Hash).Scan(&romEntryID)
+	`, systemID, f.sha1).Scan(&romEntryID)
 
 	if err == nil {
-		// SHA1 match found
-		_, err = s.db.Exec(`
-			INSERT INTO matches (scanned_file_id, rom_entry_id, match_type)
-			VALUES (?, ?, 'sha1')
-		`, fileID, romEntryID)
-		return err == nil, err
+		// SHA1 match found - verified good dump
+		return s.insertMatch(f.id, romEntryID, "sha1", "")
 	}
 
 	if err != sql.ErrNoRows {
@@ -368,22 +512,47 @@ func (s *Scanner) matchSingleFile(systemID, fileID int64, sha1Hash, crc32Hash st
 		SELECT re.id FROM rom_entries re
 		JOIN releases r ON re.release_id = r.id
 		WHERE r.system_id = ? AND LOWER(re.crc32) = LOWER(?)
-	`, systemID, crc32Hash).Scan(&romEntryID)
+	`, systemID, f.crc32).Scan(&romEntryID)
 
 	if err == nil {
 		// CRC32 match found
-		_, err = s.db.Exec(`
-			INSERT INTO matches (scanned_file_id, rom_entry_id, match_type)
-			VALUES (?, ?, 'crc32')
-		`, fileID, romEntryID)
-		return err == nil, err
+		return s.insertMatch(f.id, romEntryID, "crc32", "")
 	}
 
-	if err == sql.ErrNoRows {
-		return false, nil
+	if err != sql.ErrNoRows {
+		return false, err
 	}
 
-	return false, err
+	// Try name-based matching
+	filename := filepath.Base(f.path)
+	status := ParseFilenameStatus(filename)
+	normalized := NormalizeTitleForMatching(filename)
+
+	if entries, ok := releaseNames[normalized]; ok && len(entries) > 0 {
+		// Name match found - use first match
+		entry := entries[0]
+		flags := status.GetStatusFlags()
+		matchType := "name"
+		if status.IsModified() || status.IsProblematic() {
+			matchType = "name_modified"
+		}
+		return s.insertMatch(f.id, entry.romEntryID, matchType, flags)
+	}
+
+	return false, nil
+}
+
+func (s *Scanner) insertMatch(scannedFileID, romEntryID int64, matchType, flags string) (bool, error) {
+	var flagsVal interface{}
+	if flags != "" {
+		flagsVal = flags
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO matches (scanned_file_id, rom_entry_id, match_type, flags)
+		VALUES (?, ?, ?, ?)
+	`, scannedFileID, romEntryID, matchType, flagsVal)
+	return err == nil, err
 }
 
 // GetStatus returns the status of releases for a library.
