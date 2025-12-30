@@ -50,6 +50,7 @@ const (
 	filterMissing
 	filterFlagged
 	filterUnmatched
+	filterPreferred
 )
 
 type systemInfo struct {
@@ -125,6 +126,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			case "4", "u": // Unmatched
 				m.detailFilter = filterUnmatched
+				m.detailCursor = 0
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "5", "p": // Preferred
+				m.detailFilter = filterPreferred
 				m.detailCursor = 0
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			}
@@ -306,6 +311,7 @@ func (m model) viewDetail() string {
 		{"[2] Missing", filterMissing},
 		{"[3] Flagged", filterFlagged},
 		{"[4] Unmatched", filterUnmatched},
+		{"[5] Preferred", filterPreferred},
 	}
 
 	var tabBar string
@@ -549,6 +555,24 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 					var item detailItem
 					_ = rows.Scan(&item.Path)
 					item.Name = item.Path
+					items = append(items, item)
+				}
+			}
+
+		case filterPreferred:
+			// Preferred releases for the system
+			rows, err := database.Conn().Query(`
+				SELECT r.name
+				FROM releases r
+				JOIN libraries l ON l.system_id = r.system_id
+				WHERE l.name = ? AND r.is_preferred = 1
+				ORDER BY r.name
+			`, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Name)
 					items = append(items, item)
 				}
 			}
