@@ -1,4 +1,4 @@
-# ROM Manager (romman2)
+# ROM Manager (romman)
 
 A powerful, cross-platform ROM management tool designed for retro gaming enthusiasts who value clean, canonical libraries.
 
