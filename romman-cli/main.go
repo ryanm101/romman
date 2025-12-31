@@ -919,11 +919,11 @@ func handleExportCommand(args []string) {
 
 	// Validate report type
 	switch reportType {
-	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched:
+	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched, library.Report1G1R:
 		// valid
 	default:
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown report type: %s\n", args[1])
-		fmt.Println("Valid reports: matched, missing, preferred, unmatched")
+		fmt.Println("Valid reports: matched, missing, preferred, unmatched, 1g1r")
 		os.Exit(1)
 	}
 

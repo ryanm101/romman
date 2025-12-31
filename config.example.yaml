@@ -1,0 +1,28 @@
+# ROM Manager Configuration
+# ===========================
+# Copy this file to .romman.yaml in your working directory or ~/.config/romman/config.yaml
+# Environment variables override file settings.
+
+# Database path
+# Default: romman.db (in current directory)
+# Env override: ROMMAN_DB
+db_path: romman.db
+
+# DAT files directory
+# If set, `romman dat scan` will import all .dat files from this directory
+# Env override: ROMMAN_DAT_DIR
+dat_dir: ""
+
+# Region preference order for 1G1R selection
+# The first matched region wins when selecting preferred releases.
+# Common regions: Europe, World, USA, Japan, Korea, China, Brazil, Australia
+region_order:
+  - Europe
+  - World
+  - USA
+  - Japan
+
+# Quarantine directory for cleanup operations
+# Files marked for removal are moved here instead of being deleted.
+# Default: .quarantine (in library root)
+quarantine_dir: ""

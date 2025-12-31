@@ -16,6 +16,7 @@ const (
 	ReportMissing   ReportType = "missing"
 	ReportPreferred ReportType = "preferred"
 	ReportUnmatched ReportType = "unmatched"
+	Report1G1R      ReportType = "1g1r"
 )
 
 // ExportFormat defines output format.
@@ -78,6 +79,8 @@ func (e *Exporter) Export(libraryName string, report ReportType, format ExportFo
 		result.Records, err = e.getPreferred(lib.SystemID)
 	case ReportUnmatched:
 		result.Records, err = e.getUnmatched(lib.ID)
+	case Report1G1R:
+		result.Records, err = e.get1G1R(lib.ID, lib.SystemID)
 	default:
 		return nil, fmt.Errorf("unknown report type: %s", report)
 	}
@@ -203,6 +206,37 @@ func (e *Exporter) getUnmatched(libraryID int64) ([]ExportRecord, error) {
 	return records, nil
 }
 
+// get1G1R returns matched preferred releases - one per game (1 Game, 1 ROM).
+func (e *Exporter) get1G1R(libraryID, systemID int64) ([]ExportRecord, error) {
+	// Get preferred releases that are matched in this library
+	rows, err := e.db.Query(`
+		SELECT DISTINCT r.name, sf.path, sf.sha1, m.match_type
+		FROM releases r
+		JOIN rom_entries re ON re.release_id = r.id
+		JOIN matches m ON m.rom_entry_id = re.id
+		JOIN scanned_files sf ON sf.id = m.scanned_file_id
+		WHERE r.system_id = ?
+		  AND r.is_preferred = 1
+		  AND sf.library_id = ?
+		ORDER BY r.name
+	`, systemID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var records []ExportRecord
+	for rows.Next() {
+		var rec ExportRecord
+		if err := rows.Scan(&rec.Name, &rec.Path, &rec.Hash, &rec.MatchType); err != nil {
+			return nil, err
+		}
+		rec.Status = "1g1r"
+		records = append(records, rec)
+	}
+	return records, nil
+}
+
 func (e *Exporter) toCSV(records []ExportRecord, report ReportType) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
@@ -210,7 +244,7 @@ func (e *Exporter) toCSV(records []ExportRecord, report ReportType) ([]byte, err
 	// Header based on report type
 	var header []string
 	switch report {
-	case ReportMatched:
+	case ReportMatched, Report1G1R:
 		header = []string{"name", "path", "hash", "match_type", "flags"}
 	case ReportMissing, ReportPreferred:
 		header = []string{"name", "status"}
@@ -225,7 +259,7 @@ func (e *Exporter) toCSV(records []ExportRecord, report ReportType) ([]byte, err
 	for _, rec := range records {
 		var row []string
 		switch report {
-		case ReportMatched:
+		case ReportMatched, Report1G1R:
 			row = []string{rec.Name, rec.Path, rec.Hash, rec.MatchType, rec.Flags}
 		case ReportMissing, ReportPreferred:
 			row = []string{rec.Name, rec.Status}
