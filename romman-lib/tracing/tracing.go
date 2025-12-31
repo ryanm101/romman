@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -38,10 +39,12 @@ var tracer trace.Tracer
 // Setup initializes the OpenTelemetry tracer provider.
 // Returns a shutdown function that should be called on application exit.
 func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error) {
+	noopShutdown := func(context.Context) error { return nil }
+
 	if !cfg.Enabled || cfg.Endpoint == "" {
 		// No-op tracer when disabled
 		tracer = otel.Tracer(serviceName)
-		return func(context.Context) error { return nil }, nil
+		return noopShutdown, nil
 	}
 
 	exporter, err := otlptracegrpc.New(ctx,
@@ -49,17 +52,19 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
-		return nil, err
+		return noopShutdown, err
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			"", // Omit schema URL to avoid conflicts with Default resource
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(serviceVersion),
 		),
 	)
 	if err != nil {
-		return nil, err
+		return noopShutdown, err
 	}
 
 	tp := sdktrace.NewTracerProvider(
@@ -84,4 +89,9 @@ func Tracer() trace.Tracer {
 // StartSpan starts a new span with the given name.
 func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, name, opts...)
+}
+
+// WithAttributes returns a SpanStartOption that adds the given attributes to the span.
+func WithAttributes(attrs ...attribute.KeyValue) trace.SpanStartOption {
+	return trace.WithAttributes(attrs...)
 }

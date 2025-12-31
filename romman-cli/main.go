@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,11 +11,15 @@ import (
 	"github.com/ryanm/romman-lib/dat"
 	"github.com/ryanm/romman-lib/db"
 	"github.com/ryanm/romman-lib/library"
+	"github.com/ryanm/romman-lib/logging"
+	"github.com/ryanm/romman-lib/tracing"
 )
 
 var cfg *config.Config
 
 func main() {
+	ctx := context.Background()
+
 	// Load config
 	var err error
 	cfg, err = config.Load()
@@ -22,6 +27,26 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
 		cfg = config.DefaultConfig()
 	}
+
+	// Setup Logging
+	logging.Setup(logging.Config{
+		Format: cfg.Logging.Format,
+		Level:  cfg.Logging.Level,
+	})
+
+	// Setup Tracing
+	shutdown, err := tracing.Setup(ctx, tracing.Config{
+		Enabled:  os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "",
+		Endpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+	})
+	if err != nil {
+		logging.Error("failed to setup tracing", "error", err)
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			logging.Error("failed to shutdown tracing", "error", err)
+		}
+	}()
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -35,7 +60,7 @@ func main() {
 			fmt.Println("Commands: import, scan")
 			os.Exit(1)
 		}
-		handleDatCommand(os.Args[2:])
+		handleDatCommand(ctx, os.Args[2:])
 	case "systems":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: romman systems <command>")
@@ -49,7 +74,7 @@ func main() {
 			fmt.Println("Commands: add, list, scan, status, unmatched, discover")
 			os.Exit(1)
 		}
-		handleLibraryCommand(os.Args[2:])
+		handleLibraryCommand(ctx, os.Args[2:])
 	case "duplicates":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: romman duplicates <command>")
@@ -130,7 +155,7 @@ func openDB() (*db.DB, error) {
 	return db.Open(getDBPath())
 }
 
-func handleDatCommand(args []string) {
+func handleDatCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman dat <command>")
 		os.Exit(1)
@@ -142,16 +167,16 @@ func handleDatCommand(args []string) {
 			fmt.Println("Usage: romman dat import <file> [file...]")
 			os.Exit(1)
 		}
-		importDATs(args[1:])
+		importDATs(ctx, args[1:])
 	case "scan":
-		scanDatDir()
+		scanDatDir(ctx)
 	default:
 		fmt.Printf("Unknown dat command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func importDATs(paths []string) {
+func importDATs(ctx context.Context, paths []string) {
 	database, err := openDB()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
@@ -169,7 +194,7 @@ func importDATs(paths []string) {
 		}
 
 		fmt.Printf("Importing %s...\n", filepath.Base(path))
-		result, err := importer.Import(absPath)
+		result, err := importer.Import(ctx, absPath)
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
 			continue
@@ -294,7 +319,7 @@ func showSystemInfo(name string) {
 	fmt.Printf("Added: %s\n", system.createdAt)
 }
 
-func handleLibraryCommand(args []string) {
+func handleLibraryCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman library <command>")
 		os.Exit(1)
@@ -314,7 +339,7 @@ func handleLibraryCommand(args []string) {
 			fmt.Println("Usage: romman library scan <name>")
 			os.Exit(1)
 		}
-		scanLibrary(args[1])
+		scanLibrary(ctx, args[1])
 	case "status":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library status <name>")
@@ -335,7 +360,7 @@ func handleLibraryCommand(args []string) {
 		autoAdd := len(args) >= 3 && args[2] == "--add"
 		discoverLibraries(args[1], autoAdd)
 	case "scan-all":
-		scanAllLibraries()
+		scanAllLibraries(ctx)
 	case "rename":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library rename <name> [--dry-run]")
@@ -426,7 +451,7 @@ func listLibraries() {
 	_ = w.Flush()
 }
 
-func scanLibrary(name string) {
+func scanLibrary(ctx context.Context, name string) {
 	database, err := openDB()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
@@ -443,7 +468,7 @@ func scanLibrary(name string) {
 	scanner := library.NewScannerWithConfig(database.Conn(), scanCfg)
 
 	fmt.Printf("Scanning library: %s\n", name)
-	result, err := scanner.Scan(name)
+	result, err := scanner.Scan(ctx, name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error scanning library: %v\n", err)
 		os.Exit(1)
@@ -1011,7 +1036,7 @@ func exportRetroArch(libraryName, outputPath string) {
 	fmt.Printf("Exported RetroArch playlist to %s\n", outputPath)
 }
 
-func scanDatDir() {
+func scanDatDir(ctx context.Context) {
 	datDir := cfg.GetDatDir()
 	if datDir == "" {
 		fmt.Println("No dat_dir configured in .romman.yaml")
@@ -1050,7 +1075,7 @@ func scanDatDir() {
 		path := filepath.Join(datDir, entry.Name())
 		fmt.Printf("Importing %s...\n", entry.Name())
 
-		result, err := importer.Import(path)
+		result, err := importer.Import(ctx, path)
 		if err != nil {
 			fmt.Printf("  Error: %v\n", err)
 			continue
@@ -1067,7 +1092,7 @@ func scanDatDir() {
 	fmt.Printf("\nImported %d DAT files\n", imported)
 }
 
-func scanAllLibraries() {
+func scanAllLibraries(ctx context.Context) {
 	database, err := openDB()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
@@ -1093,7 +1118,7 @@ func scanAllLibraries() {
 
 	for _, lib := range libs {
 		fmt.Printf("Scanning: %s\n", lib.Name)
-		result, err := scanner.Scan(lib.Name)
+		result, err := scanner.Scan(ctx, lib.Name)
 		if err != nil {
 			fmt.Printf("  Error: %v\n", err)
 			continue

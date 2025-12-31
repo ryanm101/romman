@@ -2,6 +2,7 @@ package library
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
@@ -16,6 +17,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ryanm/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ScanResult contains statistics from a library scan.
@@ -132,16 +136,23 @@ func NewScannerWithConfig(db *sql.DB, config ScanConfig) *Scanner {
 
 // Scan scans a library for ROM files and matches them against the database.
 // If parallel scanning is enabled in config, uses a worker pool for hashing.
-func (s *Scanner) Scan(libraryName string) (*ScanResult, error) {
+func (s *Scanner) Scan(ctx context.Context, libraryName string) (*ScanResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "scan: "+libraryName,
+		tracing.WithAttributes(attribute.String("library.name", libraryName)),
+	)
+	defer span.End()
+
 	lib, err := s.manager.Get(libraryName)
 	if err != nil {
 		return nil, err
 	}
 
+	span.SetAttributes(attribute.String("system.name", lib.SystemName))
+
 	if s.config.Parallel && s.config.Workers > 1 {
-		return s.scanParallel(lib)
+		return s.scanParallel(ctx, lib)
 	}
-	return s.scanSequential(lib)
+	return s.scanSequential(ctx, lib)
 }
 
 // fileJob represents a file to be hashed.
@@ -165,7 +176,9 @@ type hashResult struct {
 }
 
 // scanParallel performs parallel file discovery and hashing.
-func (s *Scanner) scanParallel(lib *Library) (*ScanResult, error) {
+func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "scanParallel: "+lib.Name)
+	defer span.End()
 	// Channels for worker pool
 	jobs := make(chan fileJob, s.config.Workers*10)
 	results := make(chan hashResult, s.config.Workers*10)
@@ -434,7 +447,10 @@ func (s *Scanner) storeBatch(libraryID int64, batch []hashResult) error {
 }
 
 // scanSequential is the original sequential scanning implementation.
-func (s *Scanner) scanSequential(lib *Library) (*ScanResult, error) {
+func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
+	defer span.End()
+
 	result := &ScanResult{}
 
 	// Walk the library directory

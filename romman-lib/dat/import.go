@@ -1,9 +1,13 @@
 package dat
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
+
+	"github.com/ryanm/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Importer handles importing DAT files into the database.
@@ -28,7 +32,12 @@ type ImportResult struct {
 
 // Import imports a DAT file into the database.
 // The import is idempotent - re-importing the same DAT will update existing entries.
-func (imp *Importer) Import(datPath string) (*ImportResult, error) {
+func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "dat.Import",
+		tracing.WithAttributes(attribute.String("dat.path", datPath)),
+	)
+	defer span.End()
+
 	// Parse the DAT file
 	dat, err := ParseFile(datPath)
 	if err != nil {
@@ -42,6 +51,13 @@ func (imp *Importer) Import(datPath string) (*ImportResult, error) {
 		systemName = normalizeSystemName(dat.Header.Name)
 	}
 
+	span.SetAttributes(
+		attribute.String("system.name", systemName),
+		attribute.String("dat.name", dat.Header.Name),
+		attribute.String("dat.version", dat.Header.Version),
+		attribute.String("dat.date", dat.Header.Date),
+	)
+
 	// Start transaction
 	tx, err := imp.db.Begin()
 	if err != nil {
@@ -50,7 +66,7 @@ func (imp *Importer) Import(datPath string) (*ImportResult, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	// Get or create system
-	systemID, isNew, err := imp.getOrCreateSystem(tx, systemName, dat)
+	systemID, isNew, err := imp.getOrCreateSystem(ctx, tx, systemName, dat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get/create system: %w", err)
 	}
@@ -63,7 +79,7 @@ func (imp *Importer) Import(datPath string) (*ImportResult, error) {
 
 	// Import each game
 	for _, game := range dat.Games {
-		imported, err := imp.importGame(tx, systemID, game)
+		imported, err := imp.importGame(ctx, tx, systemID, game)
 		if err != nil {
 			return nil, fmt.Errorf("failed to import game %q: %w", game.Name, err)
 		}
@@ -83,7 +99,12 @@ func (imp *Importer) Import(datPath string) (*ImportResult, error) {
 	return result, nil
 }
 
-func (imp *Importer) getOrCreateSystem(tx *sql.Tx, name string, dat *DATFile) (int64, bool, error) {
+func (imp *Importer) getOrCreateSystem(ctx context.Context, tx *sql.Tx, name string, dat *DATFile) (int64, bool, error) {
+	_, span := tracing.StartSpan(ctx, "dat.getOrCreateSystem",
+		tracing.WithAttributes(attribute.String("system.name", name)),
+	)
+	defer span.End()
+
 	// Try to find existing system
 	var id int64
 	err := tx.QueryRow("SELECT id FROM systems WHERE name = ?", name).Scan(&id)
@@ -121,7 +142,15 @@ func (imp *Importer) getOrCreateSystem(tx *sql.Tx, name string, dat *DATFile) (i
 	return id, true, nil
 }
 
-func (imp *Importer) importGame(tx *sql.Tx, systemID int64, game Game) (bool, error) {
+func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64, game Game) (bool, error) {
+	_, span := tracing.StartSpan(ctx, "game: "+game.Name,
+		tracing.WithAttributes(
+			attribute.String("game.name", game.Name),
+			attribute.Int64("system.id", systemID),
+		),
+	)
+	defer span.End()
+
 	// Check if release already exists (by system + name)
 	var existingID int64
 	err := tx.QueryRow(
