@@ -41,6 +41,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	// Parse the DAT file
 	dat, err := ParseFile(datPath)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to parse DAT file: %w", err)
 	}
 
@@ -61,6 +62,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	// Start transaction
 	tx, err := imp.db.Begin()
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -68,6 +70,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	// Get or create system
 	systemID, isNew, err := imp.getOrCreateSystem(ctx, tx, systemName, dat)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to get/create system: %w", err)
 	}
 
@@ -81,6 +84,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	for _, game := range dat.Games {
 		imported, err := imp.importGame(ctx, tx, systemID, game)
 		if err != nil {
+			tracing.RecordError(span, err)
 			return nil, fmt.Errorf("failed to import game %q: %w", game.Name, err)
 		}
 
@@ -93,8 +97,17 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	}
 
 	if err := tx.Commit(); err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	// Record success with result attributes
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.games_imported", result.GamesImported),
+		attribute.Int("result.games_skipped", result.GamesSkipped),
+		attribute.Int("result.roms_imported", result.RomsImported),
+	)
+	tracing.SetSpanOK(span)
 
 	return result, nil
 }

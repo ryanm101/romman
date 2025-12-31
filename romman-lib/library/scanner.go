@@ -116,6 +116,7 @@ func (s *Scanner) Scan(ctx context.Context, libraryName string) (*ScanResult, er
 
 	lib, err := s.manager.Get(libraryName)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 
@@ -240,9 +241,11 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 	collectorWg.Wait()
 
 	if err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to walk library: %w", err))
 		return nil, fmt.Errorf("failed to walk library: %w", err)
 	}
 	if collectorErr != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to store results: %w", collectorErr))
 		return nil, fmt.Errorf("failed to store results: %w", collectorErr)
 	}
 
@@ -252,12 +255,23 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 
 	matchResult, err := s.matchFiles(lib)
 	if err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to match files: %w", err))
 		return nil, fmt.Errorf("failed to match files: %w", err)
 	}
 
 	if err := s.manager.UpdateLastScan(lib.ID); err != nil {
 		return nil, fmt.Errorf("failed to update scan time: %w", err)
 	}
+
+	// Record success with result attributes
+	tracing.AddSpanAttributes(span,
+		attribute.Int64("result.files_scanned", filesScanned),
+		attribute.Int64("result.files_hashed", filesHashed),
+		attribute.Int64("result.files_skipped", filesSkipped),
+		attribute.Int("result.matches_found", matchResult.MatchesFound),
+		attribute.Int("result.unmatched_files", matchResult.UnmatchedFiles),
+	)
+	tracing.SetSpanOK(span)
 
 	return &ScanResult{
 		FilesScanned:   int(filesScanned),
@@ -378,23 +392,37 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 		return nil
 	})
 	if err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to walk library: %w", err))
 		return nil, fmt.Errorf("failed to walk library: %w", err)
 	}
 
 	if err := s.cleanupStaleFiles(lib); err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to cleanup stale files: %w", err))
 		return nil, fmt.Errorf("failed to cleanup stale files: %w", err)
 	}
 
 	matchResult, err := s.matchFiles(lib)
 	if err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to match files: %w", err))
 		return nil, fmt.Errorf("failed to match files: %w", err)
 	}
 	result.MatchesFound = matchResult.MatchesFound
 	result.UnmatchedFiles = matchResult.UnmatchedFiles
 
 	if err := s.manager.UpdateLastScan(lib.ID); err != nil {
+		tracing.RecordError(span, fmt.Errorf("failed to update scan time: %w", err))
 		return nil, fmt.Errorf("failed to update scan time: %w", err)
 	}
+
+	// Record success with result attributes
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.files_scanned", result.FilesScanned),
+		attribute.Int("result.files_hashed", result.FilesHashed),
+		attribute.Int("result.files_skipped", result.FilesSkipped),
+		attribute.Int("result.matches_found", result.MatchesFound),
+		attribute.Int("result.unmatched_files", result.UnmatchedFiles),
+	)
+	tracing.SetSpanOK(span)
 
 	return result, nil
 }

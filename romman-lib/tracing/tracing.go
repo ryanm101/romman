@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -94,4 +95,28 @@ func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) 
 // WithAttributes returns a SpanStartOption that adds the given attributes to the span.
 func WithAttributes(attrs ...attribute.KeyValue) trace.SpanStartOption {
 	return trace.WithAttributes(attrs...)
+}
+
+// RecordError records an error on the span and sets the span status to Error.
+// This should be called when an operation fails.
+func RecordError(span trace.Span, err error) {
+	if err != nil && span != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// SetSpanOK marks the span as successful.
+// This should be called when an operation completes successfully.
+func SetSpanOK(span trace.Span) {
+	if span != nil {
+		span.SetStatus(codes.Ok, "")
+	}
+}
+
+// AddSpanAttributes adds attributes to an existing span.
+func AddSpanAttributes(span trace.Span, attrs ...attribute.KeyValue) {
+	if span != nil {
+		span.SetAttributes(attrs...)
+	}
 }
