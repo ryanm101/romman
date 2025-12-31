@@ -38,3 +38,11 @@ scan:
   
   # Enable parallel scanning (disable for debugging)
   parallel: true
+
+# Logging configuration
+logging:
+  # Output format: "text" for development, "json" for production
+  format: text
+  
+  # Log level: "debug", "info", "warn", "error"
+  level: info

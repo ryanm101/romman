@@ -9,11 +9,12 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	DBPath        string     `yaml:"db_path"`
-	DatDir        string     `yaml:"dat_dir"`
-	RegionOrder   []string   `yaml:"region_order"`
-	QuarantineDir string     `yaml:"quarantine_dir"`
-	Scan          ScanConfig `yaml:"scan"`
+	DBPath        string        `yaml:"db_path"`
+	DatDir        string        `yaml:"dat_dir"`
+	RegionOrder   []string      `yaml:"region_order"`
+	QuarantineDir string        `yaml:"quarantine_dir"`
+	Scan          ScanConfig    `yaml:"scan"`
+	Logging       LoggingConfig `yaml:"logging"`
 }
 
 // ScanConfig holds scan-related configuration.
@@ -21,6 +22,12 @@ type ScanConfig struct {
 	Workers   int  `yaml:"workers"`    // Number of parallel workers (0 = auto)
 	BatchSize int  `yaml:"batch_size"` // Files per transaction batch
 	Parallel  bool `yaml:"parallel"`   // Enable parallel scanning
+}
+
+// LoggingConfig holds logging configuration.
+type LoggingConfig struct {
+	Format string `yaml:"format"` // "json" or "text"
+	Level  string `yaml:"level"`  // "debug", "info", "warn", "error"
 }
 
 // DefaultConfig returns configuration with default values.
@@ -32,6 +39,10 @@ func DefaultConfig() *Config {
 			Workers:   0, // 0 means auto-detect (NumCPU)
 			BatchSize: 100,
 			Parallel:  true,
+		},
+		Logging: LoggingConfig{
+			Format: "text",
+			Level:  "info",
 		},
 	}
 }

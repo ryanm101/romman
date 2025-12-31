@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -192,7 +193,7 @@ func (s *Scanner) scanParallel(lib *Library) (*ScanResult, error) {
 
 		for r := range results {
 			if r.err != nil {
-				fmt.Printf("Warning: failed to hash %s: %v\n", r.job.path, r.err)
+				slog.Warn("failed to hash file", "path", r.job.path, "error", r.err)
 				continue
 			}
 
@@ -238,7 +239,7 @@ func (s *Scanner) scanParallel(lib *Library) (*ScanResult, error) {
 		if ext == ".zip" {
 			// Queue zip entries
 			if err := s.queueZipEntries(path, info, jobs); err != nil {
-				fmt.Printf("Warning: failed to open zip %s: %v\n", path, err)
+				slog.Warn("failed to open zip", "path", path, "error", err)
 			}
 			return nil
 		}
@@ -457,7 +458,7 @@ func (s *Scanner) scanSequential(lib *Library) (*ScanResult, error) {
 			zipResult, err := s.scanZipFile(lib, path, info)
 			if err != nil {
 				// Log error but continue scanning
-				fmt.Printf("Warning: failed to scan zip %s: %v\n", path, err)
+				slog.Warn("failed to scan zip", "path", path, "error", err)
 				return nil
 			}
 			result.FilesScanned += zipResult.FilesScanned
@@ -469,7 +470,7 @@ func (s *Scanner) scanSequential(lib *Library) (*ScanResult, error) {
 		// Handle regular ROM files
 		scanned, hashed, err := s.scanFile(lib, path, info, "")
 		if err != nil {
-			fmt.Printf("Warning: failed to scan %s: %v\n", path, err)
+			slog.Warn("failed to scan file", "path", path, "error", err)
 			return nil
 		}
 		result.FilesScanned++
@@ -526,7 +527,7 @@ func (s *Scanner) scanZipFile(lib *Library, zipPath string, zipInfo os.FileInfo)
 
 		scanned, hashed, err := s.scanZipEntry(lib, zipPath, f, mtime, size)
 		if err != nil {
-			fmt.Printf("Warning: failed to scan zip entry %s: %v\n", f.Name, err)
+			slog.Warn("failed to scan zip entry", "entry", f.Name, "error", err)
 			continue
 		}
 
