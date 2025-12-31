@@ -64,6 +64,32 @@ Binaries will be available in the `bin/` directory.
     ./bin/romman-tui
     ```
 
+
+## Observability
+
+ROM Manager includes built-in support for structured logging and OpenTelemetry tracing.
+
+### Logging
+
+Structured logs are enabled by default using Go's `slog`. You can configure the log format (text/json) and level in `.romman.yaml`.
+
+### Tracing
+
+OpenTelemetry tracing is supported for long-running operations like DAT imports and library scans.
+
+1.  **Start Jaeger** (for local visualization):
+    ```bash
+    docker compose -f docker-compose.jaeger.yml up -d
+    ```
+2.  **Run with Tracing**:
+    Set the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to point to your Jaeger/OTLP collector:
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+    ./bin/romman library scan "My Library"
+    ```
+3.  **View Traces**:
+    Open [http://localhost:16686](http://localhost:16686) to browse spans and performance data.
+
 ## Development
 
 Run tests across the workspace:
