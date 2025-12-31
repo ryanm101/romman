@@ -1,0 +1,16 @@
+services:
+  romman-web:
+    build: .
+    container_name: romman
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ./dats:/dats
+    environment:
+      - ROMMAN_DB=/data/romman.db
+      - ROMMAN_DAT_DIR=/dats
+      - ROMMAN_PORT=8080
+    restart: unless-stopped
+  # Optional: CLI commands via docker exec
+  # docker compose exec romman /app/romman <command>

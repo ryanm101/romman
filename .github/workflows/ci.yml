@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # Detect which components changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lib: ${{ steps.filter.outputs.lib }}
+      cli: ${{ steps.filter.outputs.cli }}
+      tui: ${{ steps.filter.outputs.tui }}
+      web: ${{ steps.filter.outputs.web }}
+      any: ${{ steps.filter.outputs.lib == 'true' || steps.filter.outputs.cli == 'true' || steps.filter.outputs.tui == 'true' || steps.filter.outputs.web == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lib:
+              - 'romman-lib/**'
+              - 'go.work'
+            cli:
+              - 'romman-cli/**'
+              - 'romman-lib/**'
+            tui:
+              - 'romman-tui/**'
+              - 'romman-lib/**'
+            web:
+              - 'romman-web/**'
+              - 'romman-lib/**'
+
+  # Test romman-lib (runs first, others depend on it)
+  test-lib:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lib == 'true' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y sqlite3 libsqlite3-dev
+      - name: Test lib
+        run: make -C romman-lib test
+
+  # Build components in parallel
+  build:
+    needs: [detect-changes, test-lib]
+    if: always() && (needs.test-lib.result == 'success' || needs.test-lib.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [cli, tui, web]
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.detect-changes.outputs[matrix.component] == 'true' || github.ref_type == 'tag'
+      
+      - uses: actions/setup-go@v5
+        if: needs.detect-changes.outputs[matrix.component] == 'true' || github.ref_type == 'tag'
+        with:
+          go-version: '1.24'
+      
+      - name: Install SQLite
+        if: needs.detect-changes.outputs[matrix.component] == 'true' || github.ref_type == 'tag'
+        run: sudo apt-get update && sudo apt-get install -y sqlite3 libsqlite3-dev
+
+      - name: Build ${{ matrix.component }}
+        if: needs.detect-changes.outputs[matrix.component] == 'true' || github.ref_type == 'tag'
+        run: make -C romman-${{ matrix.component }} build
+
+      - name: Test ${{ matrix.component }}
+        if: needs.detect-changes.outputs[matrix.component] == 'true' || github.ref_type == 'tag'
+        run: make -C romman-${{ matrix.component }} test
+
+      # Upload artifacts on tags
+      - name: Upload artifact
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: romman-${{ matrix.component }}-linux-amd64
+          path: bin/romman*
+          retention-days: 1
+
+  # Build and push Docker image to GHCR
+  docker-push:
+    needs: [detect-changes, test-lib]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Release job - uses artifacts, does NOT rebuild
+  release:
+    needs: [build, docker-push]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -name 'romman*' -type f -exec cp {} release/ \;
+          chmod +x release/*
+          cd release && tar -czvf ../romman-${{ github.ref_name }}-linux-amd64.tar.gz *
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: romman-${{ github.ref_name }}-linux-amd64.tar.gz
+          generate_release_notes: true
+          body: |
+            ## Docker Image
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```

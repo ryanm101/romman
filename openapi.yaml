@@ -1,0 +1,166 @@
+openapi: 3.0.3
+info:
+  title: ROM Manager API
+  description: REST API for the ROM Manager web interface
+  version: 1.0.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/stats:
+    get:
+      summary: Get system-wide statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Statistics response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+
+  /api/systems:
+    get:
+      summary: List all systems
+      operationId: getSystems
+      responses:
+        '200':
+          description: List of systems
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  systems:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/System'
+
+  /api/libraries:
+    get:
+      summary: List all libraries
+      operationId: getLibraries
+      responses:
+        '200':
+          description: List of libraries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  libraries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Library'
+
+  /api/scan:
+    post:
+      summary: Trigger a library scan
+      operationId: scanLibrary
+      parameters:
+        - name: library
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Name of the library to scan
+      responses:
+        '200':
+          description: Scan completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '400':
+          description: Missing library parameter
+        '500':
+          description: Scan failed
+
+  /api/details:
+    get:
+      summary: Get detailed library items
+      operationId: getDetails
+      parameters:
+        - name: library
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [matched, missing, flagged, unmatched, preferred]
+          description: Filter type for items
+      responses:
+        '200':
+          description: Detailed items response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DetailItem'
+        '400':
+          description: Missing library parameter
+
+components:
+  schemas:
+    Stats:
+      type: object
+      properties:
+        totalSystems:
+          type: integer
+        totalLibraries:
+          type: integer
+        totalReleases:
+          type: integer
+
+    System:
+      type: object
+      properties:
+        name:
+          type: string
+        releases:
+          type: integer
+        preferred:
+          type: integer
+
+    Library:
+      type: object
+      properties:
+        name:
+          type: string
+        system:
+          type: string
+        matched:
+          type: integer
+        total:
+          type: integer
+        matchPct:
+          type: integer
+          description: Match percentage (0-100)
+
+    DetailItem:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        matchType:
+          type: string
+        flags:
+          type: string
