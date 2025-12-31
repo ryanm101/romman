@@ -10,7 +10,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,6 +36,22 @@ type ScannedFile struct {
 	SHA1        string
 	CRC32       string
 	ArchivePath string // Path within zip, empty for regular files
+}
+
+// ScanConfig configures parallel scanning behavior.
+type ScanConfig struct {
+	Workers   int  // Number of parallel workers (default: NumCPU)
+	BatchSize int  // Number of files per transaction batch (default: 100)
+	Parallel  bool // Use parallel scanning (default: true)
+}
+
+// DefaultScanConfig returns sensible defaults for scanning.
+func DefaultScanConfig() ScanConfig {
+	return ScanConfig{
+		Workers:   runtime.NumCPU(),
+		BatchSize: 100,
+		Parallel:  true,
+	}
 }
 
 // ignoredExtensions contains file extensions that should be skipped during scanning.
@@ -83,27 +102,323 @@ func isIgnoredExtension(ext string) bool {
 type Scanner struct {
 	db      *sql.DB
 	manager *Manager
+	config  ScanConfig
 }
 
-// NewScanner creates a new library scanner.
+// NewScanner creates a new library scanner with default config.
 func NewScanner(db *sql.DB) *Scanner {
 	return &Scanner{
 		db:      db,
 		manager: NewManager(db),
+		config:  DefaultScanConfig(),
+	}
+}
+
+// NewScannerWithConfig creates a scanner with custom configuration.
+func NewScannerWithConfig(db *sql.DB, config ScanConfig) *Scanner {
+	if config.Workers <= 0 {
+		config.Workers = runtime.NumCPU()
+	}
+	if config.BatchSize <= 0 {
+		config.BatchSize = 100
+	}
+	return &Scanner{
+		db:      db,
+		manager: NewManager(db),
+		config:  config,
 	}
 }
 
 // Scan scans a library for ROM files and matches them against the database.
+// If parallel scanning is enabled in config, uses a worker pool for hashing.
 func (s *Scanner) Scan(libraryName string) (*ScanResult, error) {
 	lib, err := s.manager.Get(libraryName)
 	if err != nil {
 		return nil, err
 	}
 
+	if s.config.Parallel && s.config.Workers > 1 {
+		return s.scanParallel(lib)
+	}
+	return s.scanSequential(lib)
+}
+
+// fileJob represents a file to be hashed.
+type fileJob struct {
+	path        string
+	archivePath string
+	size        int64
+	mtime       int64
+	isZipEntry  bool
+	zipPath     string
+}
+
+// hashResult contains the result of hashing a file.
+type hashResult struct {
+	job       fileJob
+	sha1      string
+	crc32     string
+	wasHashed bool // true if newly hashed, false if cache hit
+	err       error
+}
+
+// scanParallel performs parallel file discovery and hashing.
+func (s *Scanner) scanParallel(lib *Library) (*ScanResult, error) {
+	// Channels for worker pool
+	jobs := make(chan fileJob, s.config.Workers*10)
+	results := make(chan hashResult, s.config.Workers*10)
+
+	// Atomic counters for results
+	var filesScanned, filesHashed, filesSkipped int64
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < s.config.Workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.hashWorker(lib.ID, jobs, results)
+		}()
+	}
+
+	// Collector goroutine - batches results for DB writes
+	var collectorWg sync.WaitGroup
+	collectorWg.Add(1)
+	var collectorErr error
+	go func() {
+		defer collectorWg.Done()
+		batch := make([]hashResult, 0, s.config.BatchSize)
+
+		for r := range results {
+			if r.err != nil {
+				fmt.Printf("Warning: failed to hash %s: %v\n", r.job.path, r.err)
+				continue
+			}
+
+			atomic.AddInt64(&filesScanned, 1)
+			if r.wasHashed {
+				atomic.AddInt64(&filesHashed, 1)
+			} else {
+				atomic.AddInt64(&filesSkipped, 1)
+			}
+
+			batch = append(batch, r)
+			if len(batch) >= s.config.BatchSize {
+				if err := s.storeBatch(lib.ID, batch); err != nil {
+					collectorErr = err
+					return
+				}
+				batch = batch[:0]
+			}
+		}
+
+		// Flush remaining batch
+		if len(batch) > 0 {
+			if err := s.storeBatch(lib.ID, batch); err != nil {
+				collectorErr = err
+			}
+		}
+	}()
+
+	// Walk and discover files (producer)
+	err := filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if isIgnoredExtension(ext) {
+			return nil
+		}
+
+		if ext == ".zip" {
+			// Queue zip entries
+			if err := s.queueZipEntries(path, info, jobs); err != nil {
+				fmt.Printf("Warning: failed to open zip %s: %v\n", path, err)
+			}
+			return nil
+		}
+
+		// Queue regular file
+		jobs <- fileJob{
+			path:  path,
+			size:  info.Size(),
+			mtime: info.ModTime().Unix(),
+		}
+		return nil
+	})
+
+	close(jobs)
+	wg.Wait()
+	close(results)
+	collectorWg.Wait()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk library: %w", err)
+	}
+	if collectorErr != nil {
+		return nil, fmt.Errorf("failed to store results: %w", collectorErr)
+	}
+
+	// Cleanup and matching
+	if err := s.cleanupStaleFiles(lib); err != nil {
+		return nil, fmt.Errorf("failed to cleanup stale files: %w", err)
+	}
+
+	matchResult, err := s.matchFiles(lib)
+	if err != nil {
+		return nil, fmt.Errorf("failed to match files: %w", err)
+	}
+
+	if err := s.manager.UpdateLastScan(lib.ID); err != nil {
+		return nil, fmt.Errorf("failed to update scan time: %w", err)
+	}
+
+	return &ScanResult{
+		FilesScanned:   int(filesScanned),
+		FilesHashed:    int(filesHashed),
+		FilesSkipped:   int(filesSkipped),
+		MatchesFound:   matchResult.MatchesFound,
+		UnmatchedFiles: matchResult.UnmatchedFiles,
+	}, nil
+}
+
+// queueZipEntries reads a zip file and queues its entries for hashing.
+func (s *Scanner) queueZipEntries(zipPath string, zipInfo os.FileInfo, jobs chan<- fileJob) error {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.Close() }()
+
+	mtime := zipInfo.ModTime().Unix()
+	for _, f := range r.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		jobs <- fileJob{
+			path:        zipPath,
+			archivePath: f.Name,
+			size:        int64(f.UncompressedSize64),
+			mtime:       mtime,
+			isZipEntry:  true,
+			zipPath:     zipPath,
+		}
+	}
+	return nil
+}
+
+// hashWorker is a worker that hashes files from the jobs channel.
+func (s *Scanner) hashWorker(libraryID int64, jobs <-chan fileJob, results chan<- hashResult) {
+	for job := range jobs {
+		// Check cache first
+		cached, err := s.getCachedFile(libraryID, job.path, job.archivePath, job.size, job.mtime)
+		if err != nil {
+			results <- hashResult{job: job, err: err}
+			continue
+		}
+		if cached != nil {
+			// Cache hit
+			results <- hashResult{job: job, sha1: cached.SHA1, crc32: cached.CRC32, wasHashed: false}
+			continue
+		}
+
+		// Hash the file
+		var sha1Hash, crc32Hash string
+		if job.isZipEntry {
+			sha1Hash, crc32Hash, err = s.hashZipEntry(job.zipPath, job.archivePath)
+		} else {
+			sha1Hash, crc32Hash, err = s.hashFile(job.path)
+		}
+
+		if err != nil {
+			results <- hashResult{job: job, err: err}
+			continue
+		}
+
+		results <- hashResult{job: job, sha1: sha1Hash, crc32: crc32Hash, wasHashed: true}
+	}
+}
+
+// hashFile computes hashes for a regular file.
+func (s *Scanner) hashFile(path string) (string, string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = f.Close() }()
+	return computeHashes(f)
+}
+
+// hashZipEntry computes hashes for a file inside a zip archive.
+func (s *Scanner) hashZipEntry(zipPath, entryName string) (string, string, error) {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = r.Close() }()
+
+	for _, f := range r.File {
+		if f.Name == entryName {
+			rc, err := f.Open()
+			if err != nil {
+				return "", "", err
+			}
+			sha1, crc32, err := computeHashes(rc)
+			_ = rc.Close()
+			return sha1, crc32, err
+		}
+	}
+	return "", "", fmt.Errorf("entry %s not found in %s", entryName, zipPath)
+}
+
+// storeBatch writes a batch of hash results to the database in a single transaction.
+func (s *Scanner) storeBatch(libraryID int64, batch []hashResult) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO scanned_files (library_id, path, size, mtime, sha1, crc32, archive_path)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(library_id, path, archive_path) DO UPDATE SET
+			size = excluded.size,
+			mtime = excluded.mtime,
+			sha1 = excluded.sha1,
+			crc32 = excluded.crc32,
+			scanned_at = CURRENT_TIMESTAMP
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, r := range batch {
+		var archivePathVal interface{}
+		if r.job.archivePath != "" {
+			archivePathVal = r.job.archivePath
+		}
+		_, err := stmt.Exec(libraryID, r.job.path, r.job.size, r.job.mtime, r.sha1, r.crc32, archivePathVal)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// scanSequential is the original sequential scanning implementation.
+func (s *Scanner) scanSequential(lib *Library) (*ScanResult, error) {
 	result := &ScanResult{}
 
 	// Walk the library directory
-	err = filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

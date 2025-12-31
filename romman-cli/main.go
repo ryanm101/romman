@@ -432,7 +432,13 @@ func scanLibrary(name string) {
 	}
 	defer func() { _ = database.Close() }()
 
-	scanner := library.NewScanner(database.Conn())
+	// Build scan config from YAML config
+	scanCfg := library.ScanConfig{
+		Workers:   cfg.Scan.Workers,
+		BatchSize: cfg.Scan.BatchSize,
+		Parallel:  cfg.Scan.Parallel,
+	}
+	scanner := library.NewScannerWithConfig(database.Conn(), scanCfg)
 
 	fmt.Printf("Scanning library: %s\n", name)
 	result, err := scanner.Scan(name)

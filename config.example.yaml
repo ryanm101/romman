@@ -26,3 +26,15 @@ region_order:
 # Files marked for removal are moved here instead of being deleted.
 # Default: .quarantine (in library root)
 quarantine_dir: ""
+
+# Scanner configuration
+scan:
+  # Number of parallel hashing workers
+  # 0 = auto-detect (uses number of CPU cores)
+  workers: 0
+  
+  # Number of files to batch per database transaction
+  batch_size: 100
+  
+  # Enable parallel scanning (disable for debugging)
+  parallel: true

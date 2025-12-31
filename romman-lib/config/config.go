@@ -9,10 +9,18 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	DBPath        string   `yaml:"db_path"`
-	DatDir        string   `yaml:"dat_dir"`
-	RegionOrder   []string `yaml:"region_order"`
-	QuarantineDir string   `yaml:"quarantine_dir"`
+	DBPath        string     `yaml:"db_path"`
+	DatDir        string     `yaml:"dat_dir"`
+	RegionOrder   []string   `yaml:"region_order"`
+	QuarantineDir string     `yaml:"quarantine_dir"`
+	Scan          ScanConfig `yaml:"scan"`
+}
+
+// ScanConfig holds scan-related configuration.
+type ScanConfig struct {
+	Workers   int  `yaml:"workers"`    // Number of parallel workers (0 = auto)
+	BatchSize int  `yaml:"batch_size"` // Files per transaction batch
+	Parallel  bool `yaml:"parallel"`   // Enable parallel scanning
 }
 
 // DefaultConfig returns configuration with default values.
@@ -20,6 +28,11 @@ func DefaultConfig() *Config {
 	return &Config{
 		DBPath:      "romman.db",
 		RegionOrder: []string{"Europe", "World", "USA", "Japan"},
+		Scan: ScanConfig{
+			Workers:   0, // 0 means auto-detect (NumCPU)
+			BatchSize: 100,
+			Parallel:  true,
+		},
 	}
 }
 
