@@ -150,6 +150,7 @@ type fileJob struct {
 	size        int64
 	mtime       int64
 	isZipEntry  bool
+	isCHD       bool
 	zipPath     string
 }
 
@@ -242,11 +243,15 @@ func (s *Scanner) scanParallel(lib *Library) (*ScanResult, error) {
 			return nil
 		}
 
+		// Check for CHD files
+		isCHD := ext == ".chd"
+
 		// Queue regular file
 		jobs <- fileJob{
 			path:  path,
 			size:  info.Size(),
 			mtime: info.ModTime().Unix(),
+			isCHD: isCHD,
 		}
 		return nil
 	})
@@ -330,6 +335,8 @@ func (s *Scanner) hashWorker(libraryID int64, jobs <-chan fileJob, results chan<
 		var sha1Hash, crc32Hash string
 		if job.isZipEntry {
 			sha1Hash, crc32Hash, err = s.hashZipEntry(job.zipPath, job.archivePath)
+		} else if job.isCHD {
+			sha1Hash, crc32Hash, err = s.hashCHDFile(job.path)
 		} else {
 			sha1Hash, crc32Hash, err = s.hashFile(job.path)
 		}
@@ -351,6 +358,18 @@ func (s *Scanner) hashFile(path string) (string, string, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return computeHashes(f)
+}
+
+// hashCHDFile extracts hashes from a CHD file header without decompression.
+func (s *Scanner) hashCHDFile(path string) (string, string, error) {
+	info, err := ParseCHD(path)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse CHD: %w", err)
+	}
+
+	// Use DataSHA1 (raw data hash) for matching, as this is what DATs use.
+	// CHD files don't have a traditional CRC32; we leave it empty.
+	return info.DataSHA1, "", nil
 }
 
 // hashZipEntry computes hashes for a file inside a zip archive.
