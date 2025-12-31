@@ -10,6 +10,7 @@ import (
 
 	"github.com/ryanm/romman-lib/config"
 	"github.com/ryanm/romman-lib/db"
+	"github.com/ryanm/romman-lib/library"
 )
 
 func main() {
@@ -64,6 +65,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/systems", s.handleSystems)
 	s.mux.HandleFunc("/api/libraries", s.handleLibraries)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.HandleFunc("/api/scan", s.handleScan)
+	s.mux.HandleFunc("/api/details", s.handleDetails)
 	s.mux.HandleFunc("/", s.handleDashboard)
 }
 
@@ -154,9 +157,154 @@ func (s *Server) handleLibraries(w http.ResponseWriter, _ *http.Request) {
 			"matchPct": pct,
 		})
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"libraries": libs})
+}
+
+func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := r.URL.Query().Get("library")
+	if name == "" {
+		http.Error(w, "Missing library parameter", http.StatusBadRequest)
+		return
+	}
+
+	scanner := library.NewScanner(s.db)
+	_, err := scanner.Scan(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
+	libName := r.URL.Query().Get("library")
+	filter := r.URL.Query().Get("filter")
+	if libName == "" {
+		http.Error(w, "Missing library parameter", http.StatusBadRequest)
+		return
+	}
+
+	var items []map[string]string
+
+	switch filter {
+	case "matched":
+		rows, err := s.db.Query(`
+			SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, '')
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
+			JOIN releases r ON r.id = re.release_id
+			JOIN libraries l ON l.id = sf.library_id
+			WHERE l.name = ? AND m.match_type IN ('sha1', 'crc32')
+			ORDER BY r.name
+		`, libName)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name, path, matchType, flags string
+				_ = rows.Scan(&name, &path, &matchType, &flags)
+				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "flags": flags, "status": "matched"})
+			}
+		}
+	case "missing":
+		rows, err := s.db.Query(`
+			SELECT r.name
+			FROM releases r
+			JOIN libraries l ON l.system_id = r.system_id
+			WHERE l.name = ?
+			AND r.id NOT IN (
+				SELECT DISTINCT re.release_id
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				WHERE sf.library_id = l.id
+			)
+			ORDER BY r.name
+		`, libName)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name string
+				_ = rows.Scan(&name)
+				items = append(items, map[string]string{"name": name, "status": "missing"})
+			}
+		}
+	case "flagged":
+		rows, err := s.db.Query(`
+			SELECT r.name, sf.path, m.match_type, m.flags
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
+			JOIN releases r ON r.id = re.release_id
+			JOIN libraries l ON l.id = sf.library_id
+			WHERE l.name = ? AND m.flags IS NOT NULL AND m.flags != ''
+			ORDER BY r.name
+		`, libName)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name, path, matchType, flags string
+				_ = rows.Scan(&name, &path, &matchType, &flags)
+				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "flags": flags, "status": "flagged"})
+			}
+		}
+	case "unmatched":
+		rows, err := s.db.Query(`
+			SELECT sf.path
+			FROM scanned_files sf
+			JOIN libraries l ON l.id = sf.library_id
+			LEFT JOIN matches m ON m.scanned_file_id = sf.id
+			WHERE l.name = ? AND m.id IS NULL
+			ORDER BY sf.path
+		`, libName)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var path string
+				_ = rows.Scan(&path)
+				items = append(items, map[string]string{"name": path, "path": path, "status": "unmatched"})
+			}
+		}
+	case "preferred":
+		rows, err := s.db.Query(`
+			SELECT r.name, 
+				COALESCE((SELECT sf.path FROM scanned_files sf 
+						  JOIN matches m ON m.scanned_file_id = sf.id 
+						  JOIN rom_entries re ON re.id = m.rom_entry_id 
+						  WHERE re.release_id = r.id AND sf.library_id = (SELECT id FROM libraries WHERE name = ?) LIMIT 1), ''),
+				COALESCE((SELECT m.match_type FROM scanned_files sf 
+						  JOIN matches m ON m.scanned_file_id = sf.id 
+						  JOIN rom_entries re ON re.id = m.rom_entry_id 
+						  WHERE re.release_id = r.id AND sf.library_id = (SELECT id FROM libraries WHERE name = ?) LIMIT 1), '')
+			FROM releases r
+			JOIN libraries l ON l.system_id = r.system_id
+			WHERE l.name = ? AND r.is_preferred = 1
+			ORDER BY r.name
+		`, libName, libName, libName)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name, path, matchType string
+				_ = rows.Scan(&name, &path, &matchType)
+				status := "missing"
+				if path != "" {
+					status = "matched"
+				}
+				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "status": status})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, _ *http.Request) {
@@ -170,74 +318,388 @@ const dashboardHTML = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ROM Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #050505;
+            --card-bg: rgba(25, 25, 35, 0.6);
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #58a6ff;
+            --accent-glow: rgba(88, 166, 255, 0.3);
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --success: #238636;
+            --error: #da3633;
+            --warning: #d29922;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0d1117;
-            color: #c9d1d9;
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            background-image: radial-gradient(circle at 50% 50%, #111 0%, #050505 100%);
+            color: var(--text);
             min-height: 100vh;
+            overflow-x: hidden;
         }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; position: relative; }
+
         header {
-            display: flex; align-items: center; gap: 1rem;
-            margin-bottom: 2rem; padding-bottom: 1rem;
-            border-bottom: 1px solid #30363d;
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 3rem; padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
         }
-        header h1 { font-size: 1.5rem; }
+        header h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-icon { font-size: 2rem; }
+
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem; margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem; margin-bottom: 3rem;
         }
         .stat-card {
-            background: #161b22; border: 1px solid #30363d;
-            border-radius: 8px; padding: 1.5rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px; padding: 1.5rem;
+            transition: transform 0.2s, border-color 0.2s;
         }
-        .stat-card h3 { color: #8b949e; font-size: 0.875rem; margin-bottom: 0.5rem; }
-        .stat-card .value { font-size: 2rem; font-weight: bold; color: #58a6ff; }
-        .section { margin-bottom: 2rem; }
-        .section h2 { margin-bottom: 1rem; font-size: 1.25rem; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #30363d; }
-        th { color: #8b949e; font-weight: 500; }
-        .progress { background: #30363d; border-radius: 4px; height: 8px; overflow: hidden; }
-        .progress-bar { background: #58a6ff; height: 100%; }
+        .stat-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.2); }
+        .stat-card h3 { color: var(--text-dim); font-size: 0.85rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+        .stat-card .value { font-size: 2.5rem; font-weight: 600; color: var(--accent); text-shadow: 0 0 20px var(--accent-glow); }
+
+        .section { margin-bottom: 3rem; animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+        .section h2 { font-size: 1.4rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
+        .lib-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 16px; padding: 1.5rem;
+            cursor: pointer; transition: all 0.2s;
+            position: relative; overflow: hidden;
+        }
+        .lib-card:hover { border-color: var(--accent); background: rgba(88, 166, 255, 0.05); }
+        .lib-card h4 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+        .lib-card .system-tag { font-size: 0.75rem; color: var(--text-dim); background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 1rem; }
+        .lib-card .lib-stats { font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-dim); }
+        
+        .progress-box { margin-top: 1rem; }
+        .progress-text { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; }
+        .progress-bar-bg { background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow: hidden; }
+        .progress-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px var(--accent-glow); }
+
+        .btn {
+            background: var(--accent); color: #000; border: none; padding: 0.6rem 1.2rem;
+            border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem;
+            transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.5rem;
+        }
+        .btn:hover { background: #79c0ff; transform: scale(1.02); }
+        .btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+        .btn-outline:hover { background: rgba(88, 166, 255, 0.1); }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+
+        /* Detail Modal */
+        #detail-view {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+            display: none; justify-content: center; align-items: center; z-index: 1000;
+            padding: 2rem;
+        }
+        .modal {
+            background: #0d1117; border: 1px solid var(--border);
+            width: 100%; max-width: 1000px; height: 90vh;
+            border-radius: 24px; display: flex; flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .modal-body { flex: 1; overflow-y: auto; padding: 2rem; position: relative; }
+        .modal-footer { padding: 1rem 2rem; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.9rem; }
+
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; overflow-x: auto; padding-bottom: 0.5rem; }
+        .tab {
+            padding: 0.6rem 1.2rem; border-radius: 12px; cursor: pointer;
+            font-size: 0.9rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            transition: all 0.2s; white-space: nowrap;
+        }
+        .tab:hover { background: rgba(255,255,255,0.08); }
+        .tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+        .search-box { position: relative; margin-bottom: 1.5rem; }
+        .search-input {
+            width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            border-radius: 12px; padding: 0.8rem 1rem; color: var(--text); font-size: 1rem;
+            outline: none; transition: border-color 0.2s; font-family: 'Outfit', sans-serif;
+        }
+        .search-input:focus { border-color: var(--accent); }
+
+        .item-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .game-item {
+            padding: 1rem; border-radius: 12px; background: rgba(255,255,255,0.02);
+            border: 1px solid transparent; transition: all 0.2s; cursor: pointer;
+        }
+        .game-item:hover { background: rgba(255,255,255,0.05); border-color: var(--border); }
+        .game-item.expanded { background: rgba(88, 166, 255, 0.05); border-color: var(--accent); }
+        .game-header { display: flex; justify-content: space-between; align-items: center; }
+        .game-name { font-weight: 500; }
+        .game-details { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.85rem; display: none; }
+        .game-details span { display: block; margin-bottom: 0.4rem; color: var(--text-dim); }
+        .game-details b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 400; }
+
+        .status-pill { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; font-weight: 600; }
+        .status-matched { color: #3fb950; background: rgba(63, 185, 80, 0.1); border: 1px solid rgba(63, 185, 80, 0.2); }
+        .status-missing { color: #f85149; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.2); }
+        .status-flagged { color: #d29922; background: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.2); }
+        .status-unmatched { color: #8b949e; background: rgba(139, 148, 158, 0.1); border: 1px solid rgba(139, 148, 158, 0.2); }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
     </style>
 </head>
 <body>
     <div class="container">
-        <header><span style="font-size:2rem">🎮</span><h1>ROM Manager</h1></header>
+        <header>
+            <div class="logo">
+                <span class="logo-icon">🎮</span>
+                <h1>ROM Manager</h1>
+            </div>
+            <div id="connection-status" style="font-size:0.8rem; color:var(--success)">● Connected</div>
+        </header>
+
         <div class="stats">
-            <div class="stat-card"><h3>Systems</h3><div class="value" id="stat-systems">-</div></div>
-            <div class="stat-card"><h3>Libraries</h3><div class="value" id="stat-libraries">-</div></div>
-            <div class="stat-card"><h3>Releases</h3><div class="value" id="stat-releases">-</div></div>
+            <div class="stat-card"><h3>Total Systems</h3><div class="value" id="stat-systems">-</div></div>
+            <div class="stat-card"><h3>Active Libraries</h3><div class="value" id="stat-libraries">-</div></div>
+            <div class="stat-card"><h3>Tracked Releases</h3><div class="value" id="stat-releases">-</div></div>
         </div>
-        <div class="section">
-            <h2>Systems</h2>
-            <table><thead><tr><th>Name</th><th>Releases</th><th>Preferred</th></tr></thead>
-            <tbody id="systems-body"><tr><td colspan="3">Loading...</td></tr></tbody></table>
-        </div>
-        <div class="section">
-            <h2>Libraries</h2>
-            <table><thead><tr><th>Name</th><th>System</th><th>Progress</th></tr></thead>
-            <tbody id="libs-body"><tr><td colspan="3">Loading...</td></tr></tbody></table>
+
+        <section class="section">
+            <div class="section-header">
+                <h2>📁 Libraries</h2>
+            </div>
+            <div class="card-grid" id="libs-grid">
+                <!-- Library cards will be injected here -->
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="section-header">
+                <h2>📀 Systems</h2>
+            </div>
+            <div id="systems-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:1rem;">
+                <!-- System tags/mini-cards will be injected here -->
+            </div>
+        </section>
+    </div>
+
+    <!-- Modal View -->
+    <div id="detail-view">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Library Details</h2>
+                <button class="btn btn-outline btn-sm" onclick="closeModal()">Close (Esc)</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs" id="modal-tabs">
+                    <div class="tab active" onclick="setFilter('matched')">Matched</div>
+                    <div class="tab" onclick="setFilter('missing')">Missing</div>
+                    <div class="tab" onclick="setFilter('flagged')">Flagged</div>
+                    <div class="tab" onclick="setFilter('unmatched')">Unmatched</div>
+                    <div class="tab" onclick="setFilter('preferred')">Preferred</div>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="game-search" class="search-input" placeholder="Search games..." oninput="renderItems()">
+                </div>
+                <div class="item-list" id="item-list">
+                    <!-- Items injected here -->
+                </div>
+            </div>
+            <div class="modal-footer" id="modal-footer">
+                Ready.
+            </div>
         </div>
     </div>
+
     <script>
-        fetch('/api/stats').then(r=>r.json()).then(d=>{
-            document.getElementById('stat-systems').textContent=d.totalSystems;
-            document.getElementById('stat-libraries').textContent=d.totalLibraries;
-            document.getElementById('stat-releases').textContent=d.totalReleases;
+        let state = {
+            stats: {},
+            libraries: [],
+            systems: [],
+            currentLib: null,
+            currentFilter: 'matched',
+            currentItems: [],
+            searchQuery: ''
+        };
+
+        async function api(path, method = 'GET', body = null) {
+            try {
+                const options = { method };
+                if (body) options.body = JSON.stringify(body);
+                const res = await fetch(path, options);
+                if (!res.ok) throw new Error(await res.text());
+                return await res.json();
+            } catch (e) {
+                console.error('API Error:', e);
+                return null;
+            }
+        }
+
+        async function init() {
+            const [stats, libs, sys] = await Promise.all([
+                api('/api/stats'),
+                api('/api/libraries'),
+                api('/api/systems')
+            ]);
+
+            state.stats = stats;
+            state.libraries = libs.libraries;
+            state.systems = sys.systems;
+
+            renderDashboard();
+        }
+
+        function renderDashboard() {
+            // Render Stats
+            document.getElementById('stat-systems').textContent = state.stats.totalSystems;
+            document.getElementById('stat-libraries').textContent = state.stats.totalLibraries;
+            document.getElementById('stat-releases').textContent = state.stats.totalReleases;
+
+            // Render Libraries
+            const grid = document.getElementById('libs-grid');
+            grid.innerHTML = (state.libraries || []).map(l => 
+                '<div class="lib-card" onclick="openLibrary(\'' + l.name + '\')">' +
+                    '<div style="display:flex; justify-content:space-between; align-items:start;">' +
+                        '<div>' +
+                            '<h4>' + l.name + '</h4>' +
+                            '<span class="system-tag">' + l.system + '</span>' +
+                        '</div>' +
+                        '<button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); scanLibrary(\'' + l.name + '\')">Scan</button>' +
+                    '</div>' +
+                    '<div class="lib-stats">' + l.matched + ' / ' + l.total + ' games matched</div>' +
+                    '<div class="progress-box">' +
+                        '<div class="progress-text">' +
+                            '<span>Completion</span>' +
+                            '<span>' + l.matchPct + '%</span>' +
+                        '</div>' +
+                        '<div class="progress-bar-bg">' +
+                            '<div class="progress-bar-fill" style="width: ' + l.matchPct + '%"></div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>'
+            ).join('');
+
+            // Render Systems
+            const sysCont = document.getElementById('systems-container');
+            sysCont.innerHTML = (state.systems || []).map(s => 
+                '<div style="background:var(--card-bg); border:1px solid var(--border); padding:1rem; border-radius:12px;">' +
+                    '<div style="font-weight:600; font-size:1.1rem; margin-bottom:0.5rem">' + s.name + '</div>' +
+                    '<div style="color:var(--text-dim); font-size:0.85rem">' + s.releases + ' releases tracked</div>' +
+                    '<div style="color:var(--accent); font-size:0.85rem">' + s.preferred + ' preferred versions</div>' +
+                '</div>'
+            ).join('');
+        }
+
+        async function scanLibrary(name) {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Scanning...';
+            btn.disabled = true;
+
+            const res = await api('/api/scan?library=' + encodeURIComponent(name), 'POST');
+            if (res) {
+                await init();
+            }
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+
+        async function openLibrary(name) {
+            state.currentLib = name;
+            state.currentFilter = 'matched';
+            state.searchQuery = '';
+            document.getElementById('game-search').value = '';
+            document.getElementById('modal-title').textContent = 'Library: ' + name;
+            document.getElementById('detail-view').style.display = 'flex';
+            
+            updateTabUI();
+            await fetchItems();
+        }
+
+        function closeModal() {
+            document.getElementById('detail-view').style.display = 'none';
+        }
+
+        function setFilter(filter) {
+            state.currentFilter = filter;
+            updateTabUI();
+            fetchItems();
+        }
+
+        function updateTabUI() {
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(t => {
+                const label = t.textContent.toLowerCase();
+                t.classList.toggle('active', label === state.currentFilter);
+            });
+        }
+
+        async function fetchItems() {
+            const res = await api('/api/details?library=' + encodeURIComponent(state.currentLib) + '&filter=' + state.currentFilter);
+            state.currentItems = res ? res.items : [];
+            renderItems();
+        }
+
+        function renderItems() {
+            const list = document.getElementById('item-list');
+            const search = document.getElementById('game-search').value.toLowerCase();
+            
+            const filtered = (state.currentItems || []).filter(i => i.name.toLowerCase().includes(search));
+            
+            list.innerHTML = filtered.map((item, idx) => 
+                '<div class="game-item" onclick="toggleExpand(' + idx + ')">' +
+                    '<div class="game-header">' +
+                        '<div class="game-name">' + item.name + '</div>' +
+                        '<span class="status-pill status-' + item.status + '">' + item.status + '</span>' +
+                    '</div>' +
+                    '<div class="game-details" id="details-' + idx + '">' +
+                        (item.path ? '<span>Path: <b>' + item.path + '</b></span>' : '') +
+                        (item.matchType ? '<span>Match: <b>' + item.matchType + '</b></span>' : '') +
+                        (item.flags ? '<span>Flags: <b>' + item.flags + '</b></span>' : '') +
+                    '</div>' +
+                '</div>'
+            ).join('');
+
+            document.getElementById('modal-footer').textContent = 
+                'Showing ' + filtered.length + ' of ' + (state.currentItems ? state.currentItems.length : 0) + ' items';
+        }
+
+        function toggleExpand(idx) {
+            const el = document.getElementById('details-' + idx);
+            const card = el.parentElement;
+            const isVisible = el.style.display === 'block';
+            
+            // Close all
+            document.querySelectorAll('.game-details').forEach(d => d.style.display = 'none');
+            document.querySelectorAll('.game-item').forEach(c => c.classList.remove('expanded'));
+
+            if (!isVisible) {
+                el.style.display = 'block';
+                card.classList.add('expanded');
+            }
+        }
+
+        // Global key listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
         });
-        fetch('/api/systems').then(r=>r.json()).then(d=>{
-            const t=document.getElementById('systems-body');
-            t.innerHTML=(d.systems||[]).map(s=>'<tr><td>'+s.name+'</td><td>'+s.releases+'</td><td>'+s.preferred+'</td></tr>').join('')||'<tr><td colspan="3">No systems</td></tr>';
-        });
-        fetch('/api/libraries').then(r=>r.json()).then(d=>{
-            const t=document.getElementById('libs-body');
-            t.innerHTML=(d.libraries||[]).map(l=>'<tr><td>'+l.name+'</td><td>'+l.system+'</td><td><div class="progress"><div class="progress-bar" style="width:'+l.matchPct+'%"></div></div>'+l.matchPct+'%</td></tr>').join('')||'<tr><td colspan="3">No libraries</td></tr>';
-        });
+
+        init();
     </script>
 </body>
 </html>`
