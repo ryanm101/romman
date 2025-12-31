@@ -18,7 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ryanm/romman-lib/tracing"
+	"github.com/ryanm101/romman-lib/metrics"
+	"github.com/ryanm101/romman-lib/tracing"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -137,6 +138,8 @@ func NewScannerWithConfig(db *sql.DB, config ScanConfig) *Scanner {
 // Scan scans a library for ROM files and matches them against the database.
 // If parallel scanning is enabled in config, uses a worker pool for hashing.
 func (s *Scanner) Scan(ctx context.Context, libraryName string) (*ScanResult, error) {
+	defer metrics.RecordScanDuration(libraryName, time.Now())
+
 	ctx, span := tracing.StartSpan(ctx, "scan: "+libraryName,
 		tracing.WithAttributes(attribute.String("library.name", libraryName)),
 	)
@@ -211,10 +214,13 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 			}
 
 			atomic.AddInt64(&filesScanned, 1)
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "scanned").Inc()
 			if r.wasHashed {
 				atomic.AddInt64(&filesHashed, 1)
+				metrics.FilesProcessed.WithLabelValues(lib.Name, "hashed").Inc()
 			} else {
 				atomic.AddInt64(&filesSkipped, 1)
+				metrics.FilesProcessed.WithLabelValues(lib.Name, "skipped").Inc()
 			}
 
 			batch = append(batch, r)
@@ -480,6 +486,10 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 			result.FilesScanned += zipResult.FilesScanned
 			result.FilesHashed += zipResult.FilesHashed
 			result.FilesSkipped += zipResult.FilesSkipped
+
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "scanned").Add(float64(zipResult.FilesScanned))
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "hashed").Add(float64(zipResult.FilesHashed))
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "skipped").Add(float64(zipResult.FilesSkipped))
 			return nil
 		}
 
@@ -490,10 +500,13 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 			return nil
 		}
 		result.FilesScanned++
+		metrics.FilesProcessed.WithLabelValues(lib.Name, "scanned").Inc()
 		if hashed {
 			result.FilesHashed++
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "hashed").Inc()
 		} else if scanned {
 			result.FilesSkipped++
+			metrics.FilesProcessed.WithLabelValues(lib.Name, "skipped").Inc()
 		}
 
 		return nil

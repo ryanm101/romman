@@ -2,6 +2,7 @@ package library
 
 import (
 	"archive/zip"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ryanm/romman-lib/db"
+	"github.com/ryanm101/romman-lib/db"
 )
 
 func TestScanner_BasicScan(t *testing.T) {
@@ -54,7 +55,7 @@ func TestScanner_BasicScan(t *testing.T) {
 
 	// Scan
 	scanner := NewScanner(database.Conn())
-	result, err := scanner.Scan("test-lib")
+	result, err := scanner.Scan(context.Background(), "test-lib")
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.FilesScanned)
@@ -88,13 +89,13 @@ func TestScanner_HashCaching(t *testing.T) {
 	scanner := NewScanner(database.Conn())
 
 	// First scan - should hash
-	result1, err := scanner.Scan("test-lib")
+	result1, err := scanner.Scan(context.Background(), "test-lib")
 	require.NoError(t, err)
 	assert.Equal(t, 1, result1.FilesHashed)
 	assert.Equal(t, 0, result1.FilesSkipped)
 
 	// Second scan - should use cache
-	result2, err := scanner.Scan("test-lib")
+	result2, err := scanner.Scan(context.Background(), "test-lib")
 	require.NoError(t, err)
 	assert.Equal(t, 0, result2.FilesHashed)
 	assert.Equal(t, 1, result2.FilesSkipped)
@@ -135,7 +136,7 @@ func TestScanner_ZipSupport(t *testing.T) {
 
 	// Scan
 	scanner := NewScanner(database.Conn())
-	result, err := scanner.Scan("test-lib")
+	result, err := scanner.Scan(context.Background(), "test-lib")
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.FilesScanned)

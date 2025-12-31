@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/ryanm/romman-lib/tracing"
+	"github.com/ryanm101/romman-lib/tracing"
 	"go.opentelemetry.io/otel/attribute"
 )
 

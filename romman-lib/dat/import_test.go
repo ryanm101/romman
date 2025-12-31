@@ -1,6 +1,7 @@
 package dat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ryanm/romman-lib/db"
+	"github.com/ryanm101/romman-lib/db"
 )
 
 func TestImporter_Import(t *testing.T) {
@@ -45,7 +46,7 @@ func TestImporter_Import(t *testing.T) {
 
 	// Import the DAT
 	importer := NewImporter(database.Conn())
-	result, err := importer.Import(datPath)
+	result, err := importer.Import(context.Background(), datPath)
 	require.NoError(t, err)
 
 	assert.Equal(t, "gba", result.SystemName)
@@ -96,13 +97,13 @@ func TestImporter_Idempotent(t *testing.T) {
 	importer := NewImporter(database.Conn())
 
 	// First import
-	result1, err := importer.Import(datPath)
+	result1, err := importer.Import(context.Background(), datPath)
 	require.NoError(t, err)
 	assert.True(t, result1.IsNewSystem)
 	assert.Equal(t, 1, result1.GamesImported)
 
 	// Second import - should be idempotent
-	result2, err := importer.Import(datPath)
+	result2, err := importer.Import(context.Background(), datPath)
 	require.NoError(t, err)
 	assert.False(t, result2.IsNewSystem)
 	assert.Equal(t, 0, result2.GamesImported)

@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ryanm/romman-lib/config"
-	"github.com/ryanm/romman-lib/db"
-	"github.com/ryanm/romman-lib/library"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/ryanm101/romman-lib/config"
+	"github.com/ryanm101/romman-lib/db"
+	"github.com/ryanm101/romman-lib/library"
+	"github.com/ryanm101/romman-lib/metrics"
 )
 
 //go:embed assets/*
@@ -71,6 +73,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/details", s.handleDetails)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/", s.handleDashboard)
 }
 
@@ -178,7 +181,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scanner := library.NewScanner(s.db)
-	_, err := scanner.Scan(name)
+	_, err := scanner.Scan(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -319,4 +322,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(content)
+}
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if err := metrics.UpdateDBMetrics(s.db); err != nil {
+		log.Printf("Error updating metrics: %v", err)
+	}
+	promhttp.Handler().ServeHTTP(w, r)
 }

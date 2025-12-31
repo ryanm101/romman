@@ -1,4 +1,4 @@
-module github.com/ryanm/romman-tui
+module github.com/ryanm101/romman-tui
 
 go 1.24.0
 

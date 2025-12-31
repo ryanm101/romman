@@ -25,7 +25,7 @@ The core logic engine for the ROM Manager project. This library handles all data
 This package is intended to be used by the various frontend interfaces (`romman-cli`, `romman-tui`, etc.).
 
 ```go
-import "github.com/ryanm/romman-lib/library"
+import "github.com/ryanm101/romman-lib/library"
 // ... logic here
 ```
 

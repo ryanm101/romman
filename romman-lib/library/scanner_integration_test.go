@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -95,7 +96,7 @@ func TestScannerZipSupport(t *testing.T) {
 
 	// Scan should fail gracefully for nonexistent path
 	scanner := NewScanner(db)
-	_, err = scanner.Scan("emptylib")
+	_, err = scanner.Scan(context.Background(), "emptylib")
 	if err == nil {
 		t.Log("Scanner handled nonexistent path")
 	}

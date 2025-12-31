@@ -15,6 +15,7 @@ A lightweight, high-performance web dashboard for ROM Manager, built with Go's s
 - `GET /api/stats`: Returns global counts.
 - `GET /api/systems`: Returns list of all systems.
 - `GET /api/libraries`: Returns list of libraries with match percentages.
+- `GET /metrics`: Prometheus metrics endpoint.
 
 ## Build
 

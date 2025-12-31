@@ -1,14 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ryanm/romman-lib/db"
-	"github.com/ryanm/romman-lib/library"
+	"github.com/ryanm101/romman-lib/db"
+	"github.com/ryanm101/romman-lib/library"
 )
 
 func main() {
@@ -819,7 +820,7 @@ func scanLibrary(name string) tea.Cmd {
 		defer func() { _ = database.Close() }()
 
 		scanner := library.NewScanner(database.Conn())
-		_, _ = scanner.Scan(name)
+		_, _ = scanner.Scan(context.Background(), name)
 
 		return scanCompleteMsg{}
 	}

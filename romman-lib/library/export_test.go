@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ryanm/romman-lib/db"
+	"github.com/ryanm101/romman-lib/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

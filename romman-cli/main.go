@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/ryanm/romman-lib/config"
-	"github.com/ryanm/romman-lib/dat"
-	"github.com/ryanm/romman-lib/db"
-	"github.com/ryanm/romman-lib/library"
-	"github.com/ryanm/romman-lib/logging"
-	"github.com/ryanm/romman-lib/tracing"
+	"github.com/ryanm101/romman-lib/config"
+	"github.com/ryanm101/romman-lib/dat"
+	"github.com/ryanm101/romman-lib/db"
+	"github.com/ryanm101/romman-lib/library"
+	"github.com/ryanm101/romman-lib/logging"
+	"github.com/ryanm101/romman-lib/tracing"
 )
 
 var cfg *config.Config
