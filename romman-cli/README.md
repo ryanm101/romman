@@ -12,6 +12,13 @@ The authoritative command-line interface for ROM Manager. It provides granular c
 - `prefer rebuild <system>`: Recompute preferred releases based on current rules.
 - `cleanup generate <library>`: Create a sidecar JSON plan to remove/quarantine duplicates.
 - `cleanup execute <plan.json>`: Apply a generated cleanup plan.
+- `library scan-all`: Scan all registered libraries.
+
+## Environment Variables
+
+- `ROMMAN_DB`: Path to the SQLite database file.
+- `ROMMAN_CONFIG`: Path to the configuration file (default: `.romman.yaml`).
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: If set, enables OpenTelemetry tracing and points to the OTLP collector (e.g., `localhost:4317`).
 
 ## Examples
 

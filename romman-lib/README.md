@@ -17,6 +17,8 @@ The core logic engine for the ROM Manager project. This library handles all data
 - `dat`: DAT file loading and release/rom mapping.
 - `library`: Scanner, matching, and rom status tracking.
 - `config`: User configuration and region preferences.
+- `logging`: Structured logging helpers using `slog`.
+- `tracing`: OpenTelemetry instrumentation using OTLP.
 
 ## Usage
 
