@@ -70,6 +70,7 @@ scan:
   batch_size: 100
 `
 
+	// #nosec G306
 	if err := os.WriteFile(configPath, []byte(example), 0o644); err != nil {
 		PrintError("Error: failed to write config: %v\n", err)
 		os.Exit(1)

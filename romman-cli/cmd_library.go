@@ -128,8 +128,8 @@ func listLibraries() {
 		return
 	}
 
-	var rowsData [][]string
-	var jsonData []map[string]interface{}
+	rowsData := make([][]string, 0, 20)
+	jsonData := make([]map[string]interface{}, 0, 20)
 
 	for _, lib := range libs {
 		lastScan := "never"
@@ -335,11 +335,11 @@ func discoverLibraries(parentDir string, autoAdd bool) {
 
 	manager := library.NewManager(database.Conn())
 
-	var discovered []struct {
+	discovered := make([]struct {
 		name   string
 		path   string
 		system string
-	}
+	}, 0, 10)
 
 	fmt.Printf("Discovering libraries in: %s\n\n", absPath)
 

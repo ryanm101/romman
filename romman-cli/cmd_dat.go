@@ -40,7 +40,7 @@ func importDATs(ctx context.Context, paths []string) {
 
 	importer := dat.NewImporter(database.Conn())
 
-	var results []*dat.ImportResult
+	results := make([]*dat.ImportResult, 0, len(os.Args)) // Best effort pre-alloc
 	for _, path := range paths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -99,7 +99,7 @@ func scanDatDir(ctx context.Context) {
 
 	fmt.Printf("Scanning DAT directory: %s\n\n", datDir)
 
-	var results []*dat.ImportResult
+	results := make([]*dat.ImportResult, 0, 10) // Small initial pre-alloc
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue

@@ -71,6 +71,7 @@ func handleExportCommand(args []string) {
 
 	if len(args) >= 4 {
 		outputFile := args[3]
+		// #nosec G306
 		if err := os.WriteFile(outputFile, data, 0644); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 			os.Exit(1)

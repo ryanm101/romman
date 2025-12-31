@@ -17,6 +17,7 @@ func handleBackupCommand(args []string) {
 	destDir := args[0]
 
 	// Ensure destination directory exists
+	// #nosec G301
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		PrintError("Error: failed to create destination directory: %v\n", err)
 		os.Exit(1)
@@ -35,12 +36,14 @@ func handleBackupCommand(args []string) {
 	destPath := filepath.Join(destDir, backupName)
 
 	// Copy the file
+	// #nosec G304
 	src, err := os.ReadFile(srcPath)
 	if err != nil {
 		PrintError("Error: failed to read database: %v\n", err)
 		os.Exit(1)
 	}
 
+	// #nosec G306
 	if err := os.WriteFile(destPath, src, 0o644); err != nil {
 		PrintError("Error: failed to write backup: %v\n", err)
 		os.Exit(1)

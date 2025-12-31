@@ -20,6 +20,7 @@ func TestScannerIntegration(t *testing.T) {
 	// Create test ROM file
 	romPath := filepath.Join(tempDir, "test_rom.bin")
 	romContent := []byte("test rom content for hashing")
+	// #nosec G306
 	if err := os.WriteFile(romPath, romContent, 0644); err != nil {
 		t.Fatalf("Failed to create test ROM: %v", err)
 	}
@@ -29,7 +30,7 @@ func TestScannerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initialize schema
 	if err := initTestSchema(db); err != nil {
@@ -77,7 +78,7 @@ func TestScannerZipSupport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := initTestSchema(db); err != nil {
 		t.Fatalf("Failed to init schema: %v", err)

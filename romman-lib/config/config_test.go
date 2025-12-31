@@ -77,7 +77,7 @@ logging:
   format: json
   level: debug
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	cfg := DefaultConfig()
@@ -105,7 +105,7 @@ func TestConfig_LoadFromFile_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte("invalid: yaml: content:"), 0644)
+	err := os.WriteFile(configPath, []byte("invalid: yaml: content:"), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	cfg := DefaultConfig()
@@ -118,12 +118,12 @@ func TestConfig_ApplyEnvOverrides(t *testing.T) {
 	origDB := os.Getenv("ROMMAN_DB")
 	origDat := os.Getenv("ROMMAN_DAT_DIR")
 	defer func() {
-		os.Setenv("ROMMAN_DB", origDB)
-		os.Setenv("ROMMAN_DAT_DIR", origDat)
+		_ = os.Setenv("ROMMAN_DB", origDB)
+		_ = os.Setenv("ROMMAN_DAT_DIR", origDat)
 	}()
 
-	os.Setenv("ROMMAN_DB", "/env/db.db")
-	os.Setenv("ROMMAN_DAT_DIR", "/env/dat")
+	_ = os.Setenv("ROMMAN_DB", "/env/db.db")
+	_ = os.Setenv("ROMMAN_DAT_DIR", "/env/dat")
 
 	cfg := DefaultConfig()
 	cfg.applyEnvOverrides()
@@ -136,14 +136,14 @@ func TestLoad_WithEnvConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte("db_path: from_file.db"), 0644)
+	err := os.WriteFile(configPath, []byte("db_path: from_file.db"), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	// Save and restore env
 	origConfig := os.Getenv("ROMMAN_CONFIG")
-	defer os.Setenv("ROMMAN_CONFIG", origConfig)
+	defer func() { _ = os.Setenv("ROMMAN_CONFIG", origConfig) }()
 
-	os.Setenv("ROMMAN_CONFIG", configPath)
+	_ = os.Setenv("ROMMAN_CONFIG", configPath)
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -155,18 +155,18 @@ func TestLoad_DefaultsWhenNoFile(t *testing.T) {
 	origConfig := os.Getenv("ROMMAN_CONFIG")
 	origDB := os.Getenv("ROMMAN_DB")
 	defer func() {
-		os.Setenv("ROMMAN_CONFIG", origConfig)
-		os.Setenv("ROMMAN_DB", origDB)
+		_ = os.Setenv("ROMMAN_CONFIG", origConfig)
+		_ = os.Setenv("ROMMAN_DB", origDB)
 	}()
 
-	os.Unsetenv("ROMMAN_CONFIG")
-	os.Unsetenv("ROMMAN_DB")
+	_ = os.Unsetenv("ROMMAN_CONFIG")
+	_ = os.Unsetenv("ROMMAN_DB")
 
 	// Change to temp dir where no config exists
 	origDir, _ := os.Getwd()
 	tmpDir := t.TempDir()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origDir)
+	_ = os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	cfg, err := Load()
 	require.NoError(t, err)

@@ -15,7 +15,7 @@ func TestExportMatchedIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := initTestSchema(db); err != nil {
 		t.Fatalf("Failed to init schema: %v", err)
@@ -52,7 +52,7 @@ func TestExport1G1RIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := initTestSchema(db); err != nil {
 		t.Fatalf("Failed to init schema: %v", err)
@@ -93,7 +93,7 @@ func TestExportCSVFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := initTestSchema(db); err != nil {
 		t.Fatalf("Failed to init schema: %v", err)

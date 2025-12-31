@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/ryanm101/romman-lib/config"
@@ -42,7 +43,15 @@ func main() {
 	fmt.Printf("🌐 ROM Manager Web UI\n")
 	fmt.Printf("   http://localhost:%s\n\n", port)
 
-	if err := http.ListenAndServe(":"+port, server); err != nil {
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      server,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}
 }
@@ -215,7 +224,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			ORDER BY r.name
 		`, libName)
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var name, path, matchType, flags string
 				_ = rows.Scan(&name, &path, &matchType, &flags)
@@ -238,7 +247,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			ORDER BY r.name
 		`, libName)
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var name string
 				_ = rows.Scan(&name)
@@ -257,7 +266,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			ORDER BY r.name
 		`, libName)
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var name, path, matchType, flags string
 				_ = rows.Scan(&name, &path, &matchType, &flags)
@@ -274,7 +283,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			ORDER BY sf.path
 		`, libName)
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var path string
 				_ = rows.Scan(&path)
@@ -298,7 +307,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			ORDER BY r.name
 		`, libName, libName, libName)
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var name, path, matchType string
 				_ = rows.Scan(&name, &path, &matchType)

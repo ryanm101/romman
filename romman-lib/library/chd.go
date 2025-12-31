@@ -29,7 +29,7 @@ type CHDInfo struct {
 
 // ParseCHD reads a CHD file header and extracts hash information.
 func ParseCHD(path string) (*CHDInfo, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return nil, fmt.Errorf("failed to open CHD: %w", err)
 	}

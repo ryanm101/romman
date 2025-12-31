@@ -69,7 +69,7 @@ func TestLoadPlan_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	planPath := filepath.Join(tmpDir, "bad.json")
 
-	err := os.WriteFile(planPath, []byte("not json"), 0644)
+	err := os.WriteFile(planPath, []byte("not json"), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	_, err = LoadPlan(planPath)

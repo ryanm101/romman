@@ -113,6 +113,7 @@ func (e *RetroArchExporter) ExportPlaylist(libraryName, outputPath string) error
 	}
 
 	// Ensure output directory exists
+	// #nosec G301
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -123,6 +124,7 @@ func (e *RetroArchExporter) ExportPlaylist(libraryName, outputPath string) error
 		return fmt.Errorf("failed to marshal playlist: %w", err)
 	}
 
+	// #nosec G306
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write playlist: %w", err)
 	}

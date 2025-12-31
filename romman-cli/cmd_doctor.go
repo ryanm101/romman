@@ -5,13 +5,13 @@ import (
 	"os"
 )
 
-func handleDoctorCommand(args []string) {
+func handleDoctorCommand(_ []string) {
 	database, err := openDB()
 	if err != nil {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issues := []string{}
 	checks := []map[string]interface{}{}
@@ -59,7 +59,7 @@ func handleDoctorCommand(args []string) {
 	}
 	var missingPaths []string
 	if err == nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var name, path string
 			if err := rows.Scan(&name, &path); err == nil {
@@ -78,7 +78,7 @@ func handleDoctorCommand(args []string) {
 
 	// Check 4: Systems without releases
 	var emptySystems int
-	err = database.Conn().QueryRow(`
+	_ = database.Conn().QueryRow(`
 		SELECT COUNT(*) FROM systems s
 		LEFT JOIN releases r ON r.system_id = s.id
 		GROUP BY s.id
@@ -112,9 +112,10 @@ func handleDoctorCommand(args []string) {
 		for _, check := range checks {
 			status := check["status"].(string)
 			icon := "✓"
-			if status == "fail" {
+			switch status {
+			case "fail":
 				icon = "✗"
-			} else if status == "warn" {
+			case "warn":
 				icon = "⚠"
 			}
 			fmt.Printf("%s %s: %s\n", icon, check["name"], status)

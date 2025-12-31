@@ -2,7 +2,7 @@ package library
 
 import (
 	"archive/zip"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505
 	"encoding/hex"
 	"fmt"
 	"hash/crc32"
@@ -12,7 +12,7 @@ import (
 
 // computeHashes computes SHA1 and CRC32 hashes from a reader.
 func computeHashes(r io.Reader) (sha1Hex, crc32Hex string, err error) {
-	sha1Hasher := sha1.New()
+	sha1Hasher := sha1.New() // #nosec G401
 	crc32Hasher := crc32.NewIEEE()
 	multiWriter := io.MultiWriter(sha1Hasher, crc32Hasher)
 
@@ -28,7 +28,7 @@ func computeHashes(r io.Reader) (sha1Hex, crc32Hex string, err error) {
 
 // hashFile computes hashes for a regular file.
 func (s *Scanner) hashFile(path string) (string, string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return "", "", err
 	}
@@ -37,6 +37,7 @@ func (s *Scanner) hashFile(path string) (string, string, error) {
 }
 
 // hashCHDFile extracts hashes from a CHD file header without decompression.
+// nolint:unparam
 func (s *Scanner) hashCHDFile(path string) (string, string, error) {
 	info, err := ParseCHD(path)
 	if err != nil {

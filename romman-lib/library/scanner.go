@@ -159,7 +159,7 @@ type hashResult struct {
 
 // scanParallel performs parallel file discovery and hashing.
 func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, error) {
-	ctx, span := tracing.StartSpan(ctx, "scanParallel: "+lib.Name)
+	_, span := tracing.StartSpan(ctx, "scanParallel: "+lib.Name)
 	defer span.End()
 
 	jobs := make(chan fileJob, s.config.Workers*10)
@@ -330,7 +330,7 @@ func (s *Scanner) queueZipEntries(zipPath string, zipInfo os.FileInfo, jobs chan
 		jobs <- fileJob{
 			path:        zipPath,
 			archivePath: f.Name,
-			size:        int64(f.UncompressedSize64),
+			size:        int64(f.UncompressedSize64), // #nosec G115 - safe cast for ROM sizes
 			mtime:       mtime,
 			isZipEntry:  true,
 			zipPath:     zipPath,
@@ -372,7 +372,7 @@ func (s *Scanner) hashWorker(libraryID int64, jobs <-chan fileJob, results chan<
 
 // scanSequential is the original sequential scanning implementation.
 func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult, error) {
-	ctx, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
+	_, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
 	defer span.End()
 
 	result := &ScanResult{}
@@ -497,7 +497,7 @@ func (s *Scanner) scanZipFile(lib *Library, zipPath string, zipInfo os.FileInfo)
 		}
 
 		mtime := zipInfo.ModTime().Unix()
-		size := int64(f.UncompressedSize64)
+		size := int64(f.UncompressedSize64) // #nosec G115 - safe cast for ROM sizes
 
 		scanned, hashed, err := s.scanZipEntry(lib, zipPath, f, mtime, size)
 		if err != nil {
@@ -536,7 +536,7 @@ func (s *Scanner) scanFile(lib *Library, path string, info os.FileInfo, archiveP
 		return true, false, nil
 	}
 
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return false, false, fmt.Errorf("failed to open file: %w", err)
 	}

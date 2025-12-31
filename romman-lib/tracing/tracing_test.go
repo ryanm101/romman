@@ -12,9 +12,9 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	// Save and restore env
 	orig := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	defer os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", orig)
+	defer func() { _ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", orig) }()
 
-	os.Unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	_ = os.Unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	cfg := DefaultConfig()
 	assert.False(t, cfg.Enabled)
 	assert.Empty(t, cfg.Endpoint)
@@ -23,9 +23,9 @@ func TestDefaultConfig(t *testing.T) {
 func TestDefaultConfig_WithEnv(t *testing.T) {
 	// Save and restore env
 	orig := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	defer os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", orig)
+	defer func() { _ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", orig) }()
 
-	os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+	_ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 	cfg := DefaultConfig()
 	assert.True(t, cfg.Enabled)
 	assert.Equal(t, "localhost:4317", cfg.Endpoint)

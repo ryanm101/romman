@@ -1,7 +1,7 @@
 package library
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -172,13 +172,13 @@ func (c *IntegrityChecker) checkIncomplete(libraryID int64) ([]incompleteRelease
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
 
-	h := sha1.New()
+	h := sha1.New() // #nosec G401
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}

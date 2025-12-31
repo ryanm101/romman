@@ -1,3 +1,5 @@
+version: 2
+
 run:
   timeout: 5m
   tests: true
@@ -6,13 +8,10 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - unparam
@@ -31,17 +30,24 @@ linters-settings:
   gosec:
     severity: medium
     confidence: medium
+    excludes:
+      - G301 # Expect directory permissions to be 0750 or less
+      - G304 # Potential file inclusion via variable
+      - G306 # Expect WriteFile permissions to be 0600 or less
+      - G401 # Use of weak cryptographic primitive (SHA1 for ROM matching)
+      - G505 # Blocklisted import crypto/sha1 (Required for ROM matching)
+      - G115 # integer overflow conversion uint64 -> int64
 
 issues:
   exclude-rules:
-    # Exclude some linters from running on tests files
+    # Exclude errcheck for environment and chdir in tests
     - path: _test\.go
+      text: "Error return value of .*(Setenv|Unsetenv|Chdir|Close|Rollback).*is not checked"
       linters:
-        - gosec
-        - unparam
-    # Exclude errcheck for deferred Close calls
+        - errcheck
+    # Exclude errcheck for deferred Close/Rollback globally
     - text: "Error return value of .*(Close|Rollback).*is not checked"
       linters:
         - errcheck
-  max-issues-per-linter: 50
-  max-same-issues: 10
+  max-issues-per-linter: 100
+  max-same-issues: 50

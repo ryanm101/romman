@@ -178,6 +178,7 @@ func SavePlan(plan *CleanupPlan, path string) error {
 		return fmt.Errorf("failed to marshal plan: %w", err)
 	}
 
+	// #nosec G306
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write plan: %w", err)
 	}
@@ -187,7 +188,7 @@ func SavePlan(plan *CleanupPlan, path string) error {
 
 // LoadPlan loads a plan from a JSON file.
 func LoadPlan(path string) (*CleanupPlan, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304
 	if err != nil {
 		return nil, fmt.Errorf("failed to read plan: %w", err)
 	}
@@ -242,6 +243,7 @@ func ExecutePlan(plan *CleanupPlan, dryRun bool) (*ExecutionResult, error) {
 
 func moveFile(src, dst string) error {
 	// Ensure destination directory exists
+	// #nosec G301
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -252,13 +254,13 @@ func moveFile(src, dst string) error {
 	}
 
 	// Fall back to copy + delete for cross-filesystem moves
-	srcFile, err := os.Open(src)
+	srcFile, err := os.Open(src) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("failed to open source: %w", err)
 	}
 	defer func() { _ = srcFile.Close() }()
 
-	dstFile, err := os.Create(dst)
+	dstFile, err := os.Create(dst) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("failed to create destination: %w", err)
 	}

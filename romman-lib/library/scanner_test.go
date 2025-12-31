@@ -43,10 +43,10 @@ func TestScanner_BasicScan(t *testing.T) {
 
 	// Create library directory with a ROM file
 	libPath := filepath.Join(tmpDir, "roms")
-	require.NoError(t, os.MkdirAll(libPath, 0755))
+	require.NoError(t, os.MkdirAll(libPath, 0755)) // #nosec G301
 
 	romPath := filepath.Join(libPath, "test.nes")
-	require.NoError(t, os.WriteFile(romPath, []byte("test rom content"), 0644))
+	require.NoError(t, os.WriteFile(romPath, []byte("test rom content"), 0644)) // #nosec G306
 
 	// Add library
 	manager := NewManager(database.Conn())
@@ -77,10 +77,10 @@ func TestScanner_HashCaching(t *testing.T) {
 	require.NoError(t, err)
 
 	libPath := filepath.Join(tmpDir, "roms")
-	require.NoError(t, os.MkdirAll(libPath, 0755))
+	require.NoError(t, os.MkdirAll(libPath, 0755)) // #nosec G301
 
 	romPath := filepath.Join(libPath, "test.nes")
-	require.NoError(t, os.WriteFile(romPath, []byte("test content"), 0644))
+	require.NoError(t, os.WriteFile(romPath, []byte("test content"), 0644)) // #nosec G306
 
 	manager := NewManager(database.Conn())
 	_, err = manager.Add("test-lib", libPath, "nes")
@@ -125,7 +125,7 @@ func TestScanner_ZipSupport(t *testing.T) {
 
 	// Create library with zip file
 	libPath := filepath.Join(tmpDir, "roms")
-	require.NoError(t, os.MkdirAll(libPath, 0755))
+	require.NoError(t, os.MkdirAll(libPath, 0755)) // #nosec G301
 
 	zipPath := filepath.Join(libPath, "game.zip")
 	createTestZip(t, zipPath, "game.nes", []byte("zip rom content"))
@@ -145,7 +145,7 @@ func TestScanner_ZipSupport(t *testing.T) {
 func createTestZip(t *testing.T, zipPath, filename string, content []byte) {
 	t.Helper()
 
-	f, err := os.Create(zipPath)
+	f, err := os.Create(zipPath) // #nosec G304
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
 

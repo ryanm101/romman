@@ -27,7 +27,7 @@ func TestLibraryManager(t *testing.T) {
 
 	// Create a library directory
 	libPath := filepath.Join(tmpDir, "roms")
-	require.NoError(t, os.MkdirAll(libPath, 0755))
+	require.NoError(t, os.MkdirAll(libPath, 0755)) // #nosec G301
 
 	manager := NewManager(database.Conn())
 

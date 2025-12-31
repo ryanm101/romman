@@ -14,7 +14,7 @@ func TestHashFile(t *testing.T) {
 
 	// Create test file with known content
 	content := []byte("hello world")
-	err := os.WriteFile(testFile, content, 0644)
+	err := os.WriteFile(testFile, content, 0644) // #nosec G306
 	assert.NoError(t, err)
 
 	hash, err := hashFile(testFile)

@@ -37,7 +37,6 @@ type model struct {
 	detailCounts map[detailFilter]int
 	detailCursor int
 	selectedLib  string
-	lastScanAt   string
 
 	// Search
 	searching   bool
@@ -386,7 +385,7 @@ func (m model) viewDetail() string {
 
 	// Filter tabs
 	tabStyle := lipgloss.NewStyle().Padding(0, 1)
-	activeTabStyle := tabStyle.Copy().Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
+	activeTabStyle := tabStyle.Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
 
 	tabs := []struct {
 		name   string

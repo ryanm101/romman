@@ -35,7 +35,7 @@ func TestImporter_Import(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	datPath := filepath.Join(tmpDir, "gba.dat")
-	err := os.WriteFile(datPath, []byte(datContent), 0644)
+	err := os.WriteFile(datPath, []byte(datContent), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	// Create test database
@@ -86,7 +86,7 @@ func TestImporter_Idempotent(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	datPath := filepath.Join(tmpDir, "nes.dat")
-	err := os.WriteFile(datPath, []byte(datContent), 0644)
+	err := os.WriteFile(datPath, []byte(datContent), 0644) // #nosec G306
 	require.NoError(t, err)
 
 	dbPath := filepath.Join(tmpDir, "test.db")

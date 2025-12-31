@@ -42,7 +42,7 @@ type DATFile struct {
 
 // ParseFile parses a Logiqx XML DAT file from the given path.
 func ParseFile(path string) (*DATFile, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return nil, fmt.Errorf("failed to open DAT file: %w", err)
 	}
