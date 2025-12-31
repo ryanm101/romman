@@ -74,11 +74,13 @@ func main() {
 	case "export":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: romman export <library> <report> <format> [file]")
-			fmt.Println("Reports: matched, missing, preferred, unmatched")
-			fmt.Println("Formats: csv, json")
+			fmt.Println("       romman export <library> retroarch <output.lpl>")
+			fmt.Println("Reports: matched, missing, preferred, unmatched, 1g1r")
+			fmt.Println("Formats: csv, json, retroarch")
 			os.Exit(1)
 		}
 		handleExportCommand(os.Args[2:])
+
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -916,10 +918,30 @@ func listPreferred(systemName string) {
 func handleExportCommand(args []string) {
 	if len(args) < 3 {
 		fmt.Println("Usage: romman export <library> <report> <format> [file]")
+		fmt.Println("       romman export <library> retroarch <output.lpl>")
 		os.Exit(1)
 	}
 
 	libraryName := args[0]
+	reportOrFormat := args[1]
+
+	// Handle retroarch export specially
+	if reportOrFormat == "retroarch" {
+		if len(args) < 3 {
+			fmt.Println("Usage: romman export <library> retroarch <output.lpl>")
+			os.Exit(1)
+		}
+		outputPath := args[2]
+		exportRetroArch(libraryName, outputPath)
+		return
+	}
+
+	// Standard export path
+	if len(args) < 3 {
+		fmt.Println("Usage: romman export <library> <report> <format> [file]")
+		os.Exit(1)
+	}
+
 	reportType := library.ReportType(args[1])
 	format := library.ExportFormat(args[2])
 
@@ -970,6 +992,23 @@ func handleExportCommand(args []string) {
 	} else {
 		fmt.Print(string(data))
 	}
+}
+
+func exportRetroArch(libraryName, outputPath string) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	exporter := library.NewRetroArchExporter(database.Conn())
+	if err := exporter.ExportPlaylist(libraryName, outputPath); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error exporting RetroArch playlist: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Exported RetroArch playlist to %s\n", outputPath)
 }
 
 func scanDatDir() {
