@@ -11,7 +11,7 @@ db_path: romman.db
 # DAT files directory
 # If set, `romman dat scan` will import all .dat files from this directory
 # Env override: ROMMAN_DAT_DIR
-dat_dir: ""
+dat_dir: "dat"
 
 # Region preference order for 1G1R selection
 # The first matched region wins when selecting preferred releases.
@@ -37,7 +37,7 @@ scan:
   batch_size: 100
   
   # Enable parallel scanning (disable for debugging)
-  parallel: true
+  parallel: false
 
 # Logging configuration
 logging:

@@ -1,0 +1,20 @@
+# Jaeger All-in-One for Local Tracing Development
+#
+# Start: docker-compose -f docker-compose.jaeger.yml up -d
+# UI:    http://localhost:16686
+# OTLP:  localhost:4317 (gRPC)
+#
+# To enable tracing in romman:
+#   export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.13.0
+    container_name: jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+      - "14268:14268" # Jaeger thrift
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
