@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"text/tabwriter"
 
 	"github.com/ryanm101/romman-lib/dat"
 	"github.com/ryanm101/romman-lib/library"
+	"github.com/schollz/progressbar/v3"
 )
 
 func handleLibraryCommand(ctx context.Context, args []string) {
@@ -128,18 +128,28 @@ func listLibraries() {
 		return
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NAME\tSYSTEM\tPATH\tLAST SCAN")
-	_, _ = fmt.Fprintln(w, "----\t------\t----\t---------")
+	var rowsData [][]string
+	var jsonData []map[string]interface{}
 
 	for _, lib := range libs {
 		lastScan := "never"
 		if lib.LastScanAt != nil {
 			lastScan = lib.LastScanAt.Format("2006-01-02 15:04")
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", lib.Name, lib.SystemName, lib.RootPath, lastScan)
+		rowsData = append(rowsData, []string{lib.Name, lib.SystemName, lib.RootPath, lastScan})
+		jsonData = append(jsonData, map[string]interface{}{
+			"name":       lib.Name,
+			"system":     lib.SystemName,
+			"path":       lib.RootPath,
+			"lastScanAt": lastScan,
+		})
 	}
-	_ = w.Flush()
+
+	if outputCfg.JSON {
+		PrintResult(jsonData)
+	} else {
+		PrintTable([]string{"NAME", "SYSTEM", "PATH", "LAST SCAN"}, rowsData)
+	}
 }
 
 func scanLibrary(ctx context.Context, name string) {
@@ -155,13 +165,35 @@ func scanLibrary(ctx context.Context, name string) {
 		BatchSize: cfg.Scan.BatchSize,
 		Parallel:  cfg.Scan.Parallel,
 	}
-	scanner := library.NewScannerWithConfig(database.Conn(), scanCfg)
-
 	fmt.Printf("Scanning library: %s\n", name)
+
+	var bar *progressbar.ProgressBar
+	if !outputCfg.Quiet && !outputCfg.JSON {
+		bar = progressbar.Default(-1, "Scanning")
+	}
+
+	scanCfg.OnProgress = func(p library.ScanProgress) {
+		if bar != nil {
+			if p.TotalFiles > 0 && bar.GetMax() == -1 {
+				bar.ChangeMax64(p.TotalFiles)
+			}
+			_ = bar.Set64(p.FilesScanned)
+		}
+	}
+
+	scanner := library.NewScannerWithConfig(database.Conn(), scanCfg)
 	result, err := scanner.Scan(ctx, name)
+	if bar != nil {
+		_ = bar.Finish()
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error scanning library: %v\n", err)
 		os.Exit(1)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(result)
+		return
 	}
 
 	fmt.Println()
@@ -189,18 +221,17 @@ func showLibraryStatus(name string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Library: %s\n", summary.Library.Name)
-	fmt.Printf("System: %s\n", summary.Library.SystemName)
-	fmt.Printf("Path: %s\n", summary.Library.RootPath)
-	if summary.LastScan != nil {
-		fmt.Printf("Last Scan: %s\n", summary.LastScan.Format("2006-01-02 15:04:05"))
-	} else {
-		fmt.Println("Last Scan: never")
+	res := map[string]interface{}{
+		"library":   summary.Library.Name,
+		"system":    summary.Library.SystemName,
+		"path":      summary.Library.RootPath,
+		"total":     summary.TotalFiles,
+		"matched":   summary.MatchedFiles,
+		"unmatched": summary.UnmatchedFiles,
 	}
-	fmt.Println()
-	fmt.Printf("Total Files: %d\n", summary.TotalFiles)
-	fmt.Printf("Matched: %d\n", summary.MatchedFiles)
-	fmt.Printf("Unmatched: %d\n", summary.UnmatchedFiles)
+	if summary.LastScan != nil {
+		res["lastScan"] = summary.LastScan.Format("2006-01-02 15:04:05")
+	}
 
 	statuses, err := scanner.GetLibraryStatus(name)
 	if err != nil {
@@ -219,6 +250,31 @@ func showLibraryStatus(name string) {
 			partial++
 		}
 	}
+
+	res["releases"] = map[string]int{
+		"total":   len(statuses),
+		"present": present,
+		"partial": partial,
+		"missing": missing,
+	}
+
+	if outputCfg.JSON {
+		PrintResult(res)
+		return
+	}
+
+	fmt.Printf("Library: %s\n", summary.Library.Name)
+	fmt.Printf("System: %s\n", summary.Library.SystemName)
+	fmt.Printf("Path: %s\n", summary.Library.RootPath)
+	if summary.LastScan != nil {
+		fmt.Printf("Last Scan: %s\n", summary.LastScan.Format("2006-01-02 15:04:05"))
+	} else {
+		fmt.Println("Last Scan: never")
+	}
+	fmt.Println()
+	fmt.Printf("Total Files: %d\n", summary.TotalFiles)
+	fmt.Printf("Matched: %d\n", summary.MatchedFiles)
+	fmt.Printf("Unmatched: %d\n", summary.UnmatchedFiles)
 
 	fmt.Println()
 	fmt.Printf("Releases: %d total\n", len(statuses))
@@ -247,9 +303,13 @@ func showUnmatchedFiles(name string) {
 		return
 	}
 
-	fmt.Printf("Unmatched files (%d):\n", len(files))
-	for _, f := range files {
-		fmt.Printf("  %s\n", f)
+	if outputCfg.JSON {
+		PrintResult(files)
+	} else {
+		fmt.Printf("Unmatched files (%d):\n", len(files))
+		for _, f := range files {
+			fmt.Printf("  %s\n", f)
+		}
 	}
 }
 
@@ -343,7 +403,7 @@ func scanAllLibraries(ctx context.Context) {
 	defer func() { _ = database.Close() }()
 
 	manager := library.NewManager(database.Conn())
-	scanner := library.NewScanner(database.Conn())
+	// scanner removed from here to be created per-library with progress bar support
 
 	libs, err := manager.List()
 	if err != nil {
@@ -360,7 +420,32 @@ func scanAllLibraries(ctx context.Context) {
 
 	for _, lib := range libs {
 		fmt.Printf("Scanning: %s\n", lib.Name)
+
+		var bar *progressbar.ProgressBar
+		if !outputCfg.Quiet && !outputCfg.JSON {
+			bar = progressbar.Default(-1, "Scanning")
+		}
+
+		scanCfg := library.ScanConfig{
+			Workers:   cfg.Scan.Workers,
+			BatchSize: cfg.Scan.BatchSize,
+			Parallel:  cfg.Scan.Parallel,
+			OnProgress: func(p library.ScanProgress) {
+				if bar != nil {
+					if p.TotalFiles > 0 && bar.GetMax() == -1 {
+						bar.ChangeMax64(p.TotalFiles)
+					}
+					_ = bar.Set64(p.FilesScanned)
+				}
+			},
+		}
+
+		scanner := library.NewScannerWithConfig(database.Conn(), scanCfg)
 		result, err := scanner.Scan(ctx, lib.Name)
+		if bar != nil {
+			_ = bar.Finish()
+		}
+
 		if err != nil {
 			fmt.Printf("  Error: %v\n", err)
 			continue

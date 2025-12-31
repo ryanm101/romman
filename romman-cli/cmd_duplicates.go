@@ -49,8 +49,8 @@ func listDuplicates(libraryName string) {
 		os.Exit(1)
 	}
 
-	if len(duplicates) == 0 {
-		fmt.Println("No duplicates found.")
+	if outputCfg.JSON {
+		PrintResult(duplicates)
 		return
 	}
 

@@ -73,6 +73,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/details", s.handleDetails)
+	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/", s.handleDashboard)
 }
@@ -328,4 +329,22 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error updating metrics: %v", err)
 	}
 	promhttp.Handler().ServeHTTP(w, r)
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	err := s.db.Ping()
+	status := "healthy"
+	statusCode := http.StatusOK
+
+	if err != nil {
+		status = "unhealthy"
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status": status,
+		"db":     fmt.Sprintf("%v", err == nil),
+	})
 }

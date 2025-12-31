@@ -64,6 +64,11 @@ func generateCleanupPlan(libraryName, quarantineDir string) {
 		os.Exit(1)
 	}
 
+	if outputCfg.JSON {
+		PrintResult(plan)
+		return
+	}
+
 	fmt.Printf("Cleanup plan generated: %s\n\n", planFile)
 	fmt.Printf("Library: %s\n", plan.LibraryName)
 	fmt.Printf("Quarantine: %s\n\n", plan.QuarantineDir)
@@ -92,7 +97,7 @@ func executeCleanupPlan(planFile string, dryRun bool) {
 	fmt.Printf("Library: %s\n", plan.LibraryName)
 	fmt.Printf("Actions: %d\n\n", plan.Summary.TotalActions)
 
-	if !dryRun {
+	if !dryRun && !outputCfg.JSON && !outputCfg.Quiet {
 		fmt.Print("This will move files to quarantine. Continue? [y/N] ")
 		var response string
 		_, _ = fmt.Scanln(&response)
@@ -106,6 +111,11 @@ func executeCleanupPlan(planFile string, dryRun bool) {
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error executing plan: %v\n", err)
 		os.Exit(1)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(result)
+		return
 	}
 
 	fmt.Printf("\nResults:\n")

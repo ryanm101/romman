@@ -65,6 +65,17 @@ func rebuildPreferred(systemName string) {
 		SELECT COUNT(*) FROM releases WHERE system_id = ? AND is_preferred = 0
 	`, systemID).Scan(&ignoredCount)
 
+	res := map[string]interface{}{
+		"system":    systemName,
+		"preferred": preferredCount,
+		"ignored":   ignoredCount,
+	}
+
+	if outputCfg.JSON {
+		PrintResult(res)
+		return
+	}
+
 	fmt.Printf("\nResults:\n")
 	fmt.Printf("  Preferred releases: %d\n", preferredCount)
 	fmt.Printf("  Ignored variants: %d\n", ignoredCount)
@@ -92,6 +103,11 @@ func listPreferred(systemName string) {
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting preferred releases: %v\n", err)
 		os.Exit(1)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(preferred)
+		return
 	}
 
 	if len(preferred) == 0 {

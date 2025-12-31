@@ -40,11 +40,20 @@ type ScannedFile struct {
 	ArchivePath string // Path within zip, empty for regular files
 }
 
+// ScanProgress represents current scanning progress.
+type ScanProgress struct {
+	FilesScanned int64
+	FilesHashed  int64
+	FilesSkipped int64
+	TotalFiles   int64 // 0 if unknown
+}
+
 // ScanConfig configures parallel scanning behavior.
 type ScanConfig struct {
-	Workers   int  // Number of parallel workers (default: NumCPU)
-	BatchSize int  // Number of files per transaction batch (default: 100)
-	Parallel  bool // Use parallel scanning (default: true)
+	Workers    int                         // Number of parallel workers (default: NumCPU)
+	BatchSize  int                         // Number of files per transaction batch (default: 100)
+	Parallel   bool                        // Use parallel scanning (default: true)
+	OnProgress func(progress ScanProgress) // Callback for progress updates
 }
 
 // DefaultScanConfig returns sensible defaults for scanning.
@@ -156,7 +165,21 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 	jobs := make(chan fileJob, s.config.Workers*10)
 	results := make(chan hashResult, s.config.Workers*10)
 
-	var filesScanned, filesHashed, filesSkipped int64
+	var filesScanned, filesHashed, filesSkipped, totalFiles int64
+
+	if s.config.OnProgress != nil {
+		// Quick walk to count files for progress bar
+		_ = filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				ext := strings.ToLower(filepath.Ext(path))
+				if !isIgnoredExtension(ext) {
+					atomic.AddInt64(&totalFiles, 1)
+				}
+			}
+			return nil
+		})
+		s.config.OnProgress(ScanProgress{TotalFiles: atomic.LoadInt64(&totalFiles)})
+	}
 
 	// Start workers
 	var wg sync.WaitGroup
@@ -199,6 +222,15 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 					return
 				}
 				batch = batch[:0]
+			}
+
+			if s.config.OnProgress != nil {
+				s.config.OnProgress(ScanProgress{
+					FilesScanned: atomic.LoadInt64(&filesScanned),
+					FilesHashed:  atomic.LoadInt64(&filesHashed),
+					FilesSkipped: atomic.LoadInt64(&filesSkipped),
+					TotalFiles:   atomic.LoadInt64(&totalFiles),
+				})
 			}
 		}
 
@@ -344,6 +376,20 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 	defer span.End()
 
 	result := &ScanResult{}
+	var totalFiles int64
+
+	if s.config.OnProgress != nil {
+		_ = filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				ext := strings.ToLower(filepath.Ext(path))
+				if !isIgnoredExtension(ext) {
+					totalFiles++
+				}
+			}
+			return nil
+		})
+		s.config.OnProgress(ScanProgress{TotalFiles: totalFiles})
+	}
 
 	err := filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -387,6 +433,15 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 		} else if scanned {
 			result.FilesSkipped++
 			metrics.FilesProcessed.WithLabelValues(lib.Name, "skipped").Inc()
+		}
+
+		if s.config.OnProgress != nil {
+			s.config.OnProgress(ScanProgress{
+				FilesScanned: int64(result.FilesScanned),
+				FilesHashed:  int64(result.FilesHashed),
+				FilesSkipped: int64(result.FilesSkipped),
+				TotalFiles:   totalFiles,
+			})
 		}
 
 		return nil
@@ -455,6 +510,14 @@ func (s *Scanner) scanZipFile(lib *Library, zipPath string, zipInfo os.FileInfo)
 			result.FilesHashed++
 		} else if scanned {
 			result.FilesSkipped++
+		}
+
+		if s.config.OnProgress != nil {
+			s.config.OnProgress(ScanProgress{
+				FilesScanned: int64(result.FilesScanned),
+				FilesHashed:  int64(result.FilesHashed),
+				FilesSkipped: int64(result.FilesSkipped),
+			})
 		}
 	}
 

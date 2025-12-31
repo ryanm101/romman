@@ -40,6 +40,7 @@ func importDATs(ctx context.Context, paths []string) {
 
 	importer := dat.NewImporter(database.Conn())
 
+	var results []*dat.ImportResult
 	for _, path := range paths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -47,20 +48,29 @@ func importDATs(ctx context.Context, paths []string) {
 			continue
 		}
 
-		fmt.Printf("Importing %s...\n", filepath.Base(path))
+		if !outputCfg.Quiet && !outputCfg.JSON {
+			fmt.Printf("Importing %s...\n", filepath.Base(path))
+		}
 		result, err := importer.Import(ctx, absPath)
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
 			continue
 		}
+		results = append(results, result)
 
-		status := "updated"
-		if result.IsNewSystem {
-			status = "created"
+		if !outputCfg.Quiet && !outputCfg.JSON {
+			status := "updated"
+			if result.IsNewSystem {
+				status = "created"
+			}
+			fmt.Printf("  System: %s (%s)\n", result.SystemName, status)
+			fmt.Printf("  Games imported: %d, ROMs: %d, Skipped: %d\n",
+				result.GamesImported, result.RomsImported, result.GamesSkipped)
 		}
-		fmt.Printf("  System: %s (%s)\n", result.SystemName, status)
-		fmt.Printf("  Games imported: %d, ROMs: %d, Skipped: %d\n",
-			result.GamesImported, result.RomsImported, result.GamesSkipped)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(results)
 	}
 }
 
@@ -89,7 +99,7 @@ func scanDatDir(ctx context.Context) {
 
 	fmt.Printf("Scanning DAT directory: %s\n\n", datDir)
 
-	imported := 0
+	var results []*dat.ImportResult
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -100,21 +110,29 @@ func scanDatDir(ctx context.Context) {
 		}
 
 		path := filepath.Join(datDir, entry.Name())
-		fmt.Printf("Importing %s...\n", entry.Name())
+		if !outputCfg.Quiet && !outputCfg.JSON {
+			fmt.Printf("Importing %s...\n", entry.Name())
+		}
 
 		result, err := importer.Import(ctx, path)
 		if err != nil {
 			fmt.Printf("  Error: %v\n", err)
 			continue
 		}
+		results = append(results, result)
 
-		status := "updated"
-		if result.IsNewSystem {
-			status = "created"
+		if !outputCfg.Quiet && !outputCfg.JSON {
+			status := "updated"
+			if result.IsNewSystem {
+				status = "created"
+			}
+			fmt.Printf("  System: %s (%s) - %d games\n", result.SystemName, status, result.GamesImported)
 		}
-		fmt.Printf("  System: %s (%s) - %d games\n", result.SystemName, status, result.GamesImported)
-		imported++
 	}
 
-	fmt.Printf("\nImported %d DAT files\n", imported)
+	if outputCfg.JSON {
+		PrintResult(results)
+	} else if !outputCfg.Quiet {
+		fmt.Printf("\nImported %d DAT files\n", len(results))
+	}
 }

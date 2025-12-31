@@ -75,9 +75,32 @@ func handleExportCommand(args []string) {
 			_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Exported %s %s to %s\n", reportType, format, outputFile)
+
+		if outputCfg.JSON {
+			PrintResult(map[string]interface{}{
+				"library": libraryName,
+				"report":  reportType,
+				"format":  format,
+				"output":  outputFile,
+				"status":  "success",
+			})
+		} else {
+			fmt.Printf("Exported %s %s to %s\n", reportType, format, outputFile)
+		}
 	} else {
-		fmt.Print(string(data))
+		if format == library.FormatJSON && outputCfg.JSON {
+			// Already JSON, just print it
+			fmt.Print(string(data))
+		} else if outputCfg.JSON {
+			PrintResult(map[string]interface{}{
+				"library": libraryName,
+				"report":  reportType,
+				"format":  format,
+				"data":    string(data),
+			})
+		} else {
+			fmt.Print(string(data))
+		}
 	}
 }
 
@@ -95,5 +118,14 @@ func exportRetroArch(libraryName, outputPath string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Exported RetroArch playlist to %s\n", outputPath)
+	if outputCfg.JSON {
+		PrintResult(map[string]interface{}{
+			"library": libraryName,
+			"format":  "retroarch",
+			"output":  outputPath,
+			"status":  "success",
+		})
+	} else {
+		fmt.Printf("Exported RetroArch playlist to %s\n", outputPath)
+	}
 }

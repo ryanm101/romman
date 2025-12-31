@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"text/tabwriter"
 
 	"github.com/ryanm101/romman-lib/dat"
 )
@@ -52,20 +51,28 @@ func listSystems() {
 	}
 	defer func() { _ = rows.Close() }()
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SYSTEM\tDAT NAME\tRELEASES")
-	_, _ = fmt.Fprintln(w, "------\t--------\t--------")
+	var rowsData [][]string
+	var jsonData []map[string]interface{}
 
 	for rows.Next() {
 		var name, datName string
 		var releaseCount int
 		if err := rows.Scan(&name, &datName, &releaseCount); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Error reading row: %v\n", err)
 			continue
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\n", name, datName, releaseCount)
+		rowsData = append(rowsData, []string{name, datName, fmt.Sprintf("%d", releaseCount)})
+		jsonData = append(jsonData, map[string]interface{}{
+			"name":     name,
+			"datName":  datName,
+			"releases": releaseCount,
+		})
 	}
-	_ = w.Flush()
+
+	if outputCfg.JSON {
+		PrintResult(jsonData)
+	} else {
+		PrintTable([]string{"SYSTEM", "DAT NAME", "RELEASES"}, rowsData)
+	}
 }
 
 func showSystemInfo(name string) {
@@ -104,17 +111,33 @@ func showSystemInfo(name string) {
 		WHERE r.system_id = ?
 	`, system.id).Scan(&romCount)
 
-	fmt.Printf("System: %s\n", name)
-	fmt.Printf("Display Name: %s\n", dat.GetSystemDisplayName(name))
-	fmt.Println()
-	fmt.Printf("DAT Name: %s\n", system.datName)
-	fmt.Printf("DAT Description: %s\n", system.datDesc)
-	fmt.Printf("DAT Version: %s\n", system.datVersion)
-	fmt.Printf("DAT Date: %s\n", system.datDate)
-	fmt.Println()
-	fmt.Printf("Releases: %d\n", releaseCount)
-	fmt.Printf("ROM Entries: %d\n", romCount)
-	fmt.Printf("Added: %s\n", system.createdAt)
+	res := map[string]interface{}{
+		"name":        name,
+		"displayName": dat.GetSystemDisplayName(name),
+		"datName":     system.datName,
+		"datDesc":     system.datDesc,
+		"datVersion":  system.datVersion,
+		"datDate":     system.datDate,
+		"releases":    releaseCount,
+		"roms":        romCount,
+		"added":       system.createdAt,
+	}
+
+	if outputCfg.JSON {
+		PrintResult(res)
+	} else {
+		fmt.Printf("System: %s\n", name)
+		fmt.Printf("Display Name: %s\n", res["displayName"])
+		fmt.Println()
+		fmt.Printf("DAT Name: %s\n", system.datName)
+		fmt.Printf("DAT Description: %s\n", system.datDesc)
+		fmt.Printf("DAT Version: %s\n", system.datVersion)
+		fmt.Printf("DAT Date: %s\n", system.datDate)
+		fmt.Println()
+		fmt.Printf("Releases: %d\n", releaseCount)
+		fmt.Printf("ROM Entries: %d\n", romCount)
+		fmt.Printf("Added: %s\n", system.createdAt)
+	}
 }
 
 func showSystemsStatus() {
@@ -142,9 +165,8 @@ func showSystemsStatus() {
 	}
 	defer func() { _ = rows.Close() }()
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SYSTEM\tRELEASES\tPREFERRED\tLIBRARIES")
-	_, _ = fmt.Fprintln(w, "------\t--------\t---------\t---------")
+	var rowsData [][]string
+	var jsonData []map[string]interface{}
 
 	for rows.Next() {
 		var name string
@@ -152,7 +174,18 @@ func showSystemsStatus() {
 		if err := rows.Scan(&name, &releases, &preferred, &libraries); err != nil {
 			continue
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%d\n", name, releases, preferred, libraries)
+		rowsData = append(rowsData, []string{name, fmt.Sprintf("%d", releases), fmt.Sprintf("%d", preferred), fmt.Sprintf("%d", libraries)})
+		jsonData = append(jsonData, map[string]interface{}{
+			"name":      name,
+			"releases":  releases,
+			"preferred": preferred,
+			"libraries": libraries,
+		})
 	}
-	_ = w.Flush()
+
+	if outputCfg.JSON {
+		PrintResult(jsonData)
+	} else {
+		PrintTable([]string{"SYSTEM", "RELEASES", "PREFERRED", "LIBRARIES"}, rowsData)
+	}
 }
