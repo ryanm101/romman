@@ -351,6 +351,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		stubCreated bool
 	}
 	discovered := make([]discoveredLib, 0, 10)
+	skipped := 0
 
 	fmt.Printf("Discovering libraries in: %s\n\n", absPath)
 
@@ -365,6 +366,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		system, found := dat.DetectSystemFromDirName(dirName)
 		if !found {
 			fmt.Printf("  %-20s -> (unknown system, skipped)\n", dirName)
+			skipped++
 			continue
 		}
 
@@ -377,6 +379,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 				discovered = append(discovered, discoveredLib{dirName, dirPath, system, true})
 			} else {
 				fmt.Printf("  %-20s -> %s (no DAT imported, skipped)\n", dirName, system)
+				skipped++
 			}
 			continue
 		}
@@ -385,7 +388,11 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		discovered = append(discovered, discoveredLib{dirName, dirPath, system, false})
 	}
 
-	fmt.Printf("\nFound %d libraries\n", len(discovered))
+	fmt.Printf("\nFound %d libraries", len(discovered))
+	if skipped > 0 {
+		fmt.Printf(" (%d skipped)", skipped)
+	}
+	fmt.Println()
 
 	if !autoAdd {
 		if force {
