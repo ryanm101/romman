@@ -405,8 +405,8 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		// Create stub system if needed
 		if lib.stubCreated {
 			_, err := database.Conn().Exec(`
-				INSERT OR IGNORE INTO systems (name, dat_name, description, created_at, updated_at)
-				VALUES (?, ?, ?, datetime('now'), datetime('now'))
+				INSERT OR IGNORE INTO systems (name, dat_name, dat_description)
+				VALUES (?, ?, ?)
 			`, lib.system, lib.system, fmt.Sprintf("Stub system for %s (no DAT imported)", lib.system))
 			if err != nil {
 				fmt.Printf("  %s: failed to create stub system: %v\n", lib.name, err)
