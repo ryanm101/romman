@@ -117,6 +117,8 @@ func main() {
 		handleBackupCommand(args[1:])
 	case "config":
 		handleConfigCommand(args[1:])
+	case "scrape":
+		handleScrapeCommand(ctx, args[1:])
 	default:
 		fmt.Printf("Unknown command: %s\n", args[0])
 		printUsage()
@@ -158,6 +160,7 @@ func printUsage() {
 	fmt.Println("  backup <dest>                       Backup database to destination")
 	fmt.Println("  config show                         Show active configuration")
 	fmt.Println("  config init                         Initialize example config")
+	fmt.Println("  scrape <release_id>                 Scrape metadata from IGDB")
 	fmt.Println("  help                                Show this help")
 	fmt.Println()
 	fmt.Println("Environment:")

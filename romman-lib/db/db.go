@@ -84,6 +84,50 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 5 {
+		if err := db.migrateV5(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ... existing migrations ...
+
+// migrateV5 adds metadata and media tables.
+func (db *DB) migrateV5() error {
+	schema := `
+		-- Game metadata (scraped)
+		CREATE TABLE IF NOT EXISTS game_metadata (
+			release_id INTEGER PRIMARY KEY,
+			provider_id TEXT, -- e.g., 'igdb:12345'
+			description TEXT,
+			release_date TEXT,
+			developer TEXT,
+			publisher TEXT,
+			rating REAL,
+			scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(release_id) REFERENCES releases(id) ON DELETE CASCADE
+		);
+
+		-- Game media (images)
+		CREATE TABLE IF NOT EXISTS game_media (
+			id INTEGER PRIMARY KEY,
+			release_id INTEGER NOT NULL,
+			type TEXT NOT NULL, -- 'boxart', 'screenshot', 'logo'
+			url TEXT,           -- Remote URL
+			local_path TEXT,    -- Local file path
+			FOREIGN KEY(release_id) REFERENCES releases(id) ON DELETE CASCADE
+		);
+		CREATE INDEX IF NOT EXISTS idx_game_media_release_id ON game_media(release_id);
+
+		INSERT INTO schema_version (version) VALUES (5);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v5 migration: %w", err)
+	}
 
 	return nil
 }
