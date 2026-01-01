@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ROM Manager</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --bg: #050505;
@@ -19,7 +21,12 @@
             --warning: #d29922;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: 'Outfit', sans-serif;
             background: var(--bg);
@@ -29,126 +36,467 @@
             overflow-x: hidden;
         }
 
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; position: relative; }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+        }
 
         header {
-            display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 3rem; padding-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
             border-bottom: 1px solid var(--border);
         }
-        header h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
-        .logo { display: flex; align-items: center; gap: 0.75rem; }
-        .logo-icon { font-size: 2rem; }
+
+        header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            font-size: 2rem;
+        }
 
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.5rem; margin-bottom: 3rem;
+            gap: 1.5rem;
+            margin-bottom: 3rem;
         }
+
         .stat-card {
             background: var(--card-bg);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid var(--border);
-            border-radius: 16px; padding: 1.5rem;
+            border-radius: 16px;
+            padding: 1.5rem;
             transition: transform 0.2s, border-color 0.2s;
         }
-        .stat-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.2); }
-        .stat-card h3 { color: var(--text-dim); font-size: 0.85rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
-        .stat-card .value { font-size: 2.5rem; font-weight: 600; color: var(--accent); text-shadow: 0 0 20px var(--accent-glow); }
 
-        .section { margin-bottom: 3rem; animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-        .section h2 { font-size: 1.4rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
 
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
+        .stat-card h3 {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
+        }
+
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: var(--accent);
+            text-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .section {
+            margin-bottom: 3rem;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+        }
+
+        .section h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .format-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+        }
+
         .lib-card {
             background: var(--card-bg);
             backdrop-filter: blur(8px);
             border: 1px solid var(--border);
-            border-radius: 16px; padding: 1.5rem;
-            cursor: pointer; transition: all 0.2s;
-            position: relative; overflow: hidden;
+            border-radius: 16px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
         }
-        .lib-card:hover { border-color: var(--accent); background: rgba(88, 166, 255, 0.05); }
-        .lib-card h4 { font-size: 1.25rem; margin-bottom: 0.25rem; }
-        .lib-card .system-tag { font-size: 0.75rem; color: var(--text-dim); background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 1rem; }
-        .lib-card .lib-stats { font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-dim); }
-        
-        .progress-box { margin-top: 1rem; }
-        .progress-text { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; }
-        .progress-bar-bg { background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow: hidden; }
-        .progress-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px var(--accent-glow); }
+
+        .lib-card:hover {
+            border-color: var(--accent);
+            background: rgba(88, 166, 255, 0.05);
+        }
+
+        .lib-card h4 {
+            font-size: 1.25rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .lib-card .system-tag {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .lib-card .lib-stats {
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            color: var(--text-dim);
+        }
+
+        .progress-box {
+            margin-top: 1rem;
+        }
+
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar-bg {
+            background: rgba(255, 255, 255, 0.05);
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: var(--accent);
+            height: 100%;
+            width: 0%;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
 
         .btn {
-            background: var(--accent); color: #000; border: none; padding: 0.6rem 1.2rem;
-            border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem;
-            transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.5rem;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
         }
-        .btn:hover { background: #79c0ff; transform: scale(1.02); }
-        .btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-        .btn-outline:hover { background: rgba(88, 166, 255, 0.1); }
-        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+
+        .btn:hover {
+            background: #79c0ff;
+            transform: scale(1.02);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+
+        .btn-outline:hover {
+            background: rgba(88, 166, 255, 0.1);
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+        }
 
         /* Detail Modal */
         #detail-view {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
-            display: none; justify-content: center; align-items: center; z-index: 1000;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
             padding: 2rem;
         }
+
+        /* Pack Builder Modal */
+        #pack-view {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 2rem;
+        }
+
+        .pack-game-item {
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            transition: background 0.15s;
+            border: 1px solid transparent;
+        }
+
+        .pack-game-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .pack-game-item.selected {
+            background: rgba(88, 166, 255, 0.1);
+            border-color: var(--accent);
+        }
+
+        .pack-game-item input[type="checkbox"] {
+            accent-color: var(--accent);
+        }
+
         .modal {
-            background: #0d1117; border: 1px solid var(--border);
-            width: 100%; max-width: 1000px; height: 90vh;
-            border-radius: 24px; display: flex; flex-direction: column;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            background: #0d1117;
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 1000px;
+            height: 90vh;
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
         }
-        .modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-        .modal-body { flex: 1; overflow-y: auto; padding: 2rem; position: relative; }
-        .modal-footer { padding: 1rem 2rem; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.9rem; }
 
-        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; overflow-x: auto; padding-bottom: 0.5rem; }
+        .modal-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .modal-footer {
+            padding: 1rem 2rem;
+            border-top: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+        }
+
         .tab {
-            padding: 0.6rem 1.2rem; border-radius: 12px; cursor: pointer;
-            font-size: 0.9rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
-            transition: all 0.2s; white-space: nowrap;
+            padding: 0.6rem 1.2rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+            white-space: nowrap;
         }
-        .tab:hover { background: rgba(255,255,255,0.08); }
-        .tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
-        .search-box { position: relative; margin-bottom: 1.5rem; }
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .tab.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        .search-box {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
         .search-input {
-            width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
-            border-radius: 12px; padding: 0.8rem 1rem; color: var(--text); font-size: 1rem;
-            outline: none; transition: border-color 0.2s; font-family: 'Outfit', sans-serif;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: 'Outfit', sans-serif;
         }
-        .search-input:focus { border-color: var(--accent); }
 
-        .item-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .search-input:focus {
+            border-color: var(--accent);
+        }
+
+        .item-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
         .game-item {
-            padding: 1rem; border-radius: 12px; background: rgba(255,255,255,0.02);
-            border: 1px solid transparent; transition: all 0.2s; cursor: pointer;
+            padding: 1rem;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            cursor: pointer;
         }
-        .game-item:hover { background: rgba(255,255,255,0.05); border-color: var(--border); }
-        .game-item.expanded { background: rgba(88, 166, 255, 0.05); border-color: var(--accent); }
-        .game-header { display: flex; justify-content: space-between; align-items: center; }
-        .game-name { font-weight: 500; }
-        .game-details { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.85rem; display: none; }
-        .game-details span { display: block; margin-bottom: 0.4rem; color: var(--text-dim); }
-        .game-details b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 400; }
 
-        .status-pill { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; font-weight: 600; }
-        .status-matched { color: #3fb950; background: rgba(63, 185, 80, 0.1); border: 1px solid rgba(63, 185, 80, 0.2); }
-        .status-missing { color: #f85149; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.2); }
-        .status-flagged { color: #d29922; background: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.2); }
-        .status-unmatched { color: #8b949e; background: rgba(139, 148, 158, 0.1); border: 1px solid rgba(139, 148, 158, 0.2); }
+        .game-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--border);
+        }
 
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+        .game-item.expanded {
+            background: rgba(88, 166, 255, 0.05);
+            border-color: var(--accent);
+        }
+
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .game-name {
+            font-weight: 500;
+        }
+
+        .game-details {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.85rem;
+            display: none;
+        }
+
+        .game-details span {
+            display: block;
+            margin-bottom: 0.4rem;
+            color: var(--text-dim);
+        }
+
+        .game-details b {
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 400;
+        }
+
+        .status-pill {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .status-matched {
+            color: #3fb950;
+            background: rgba(63, 185, 80, 0.1);
+            border: 1px solid rgba(63, 185, 80, 0.2);
+        }
+
+        .status-missing {
+            color: #f85149;
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid rgba(248, 81, 73, 0.2);
+        }
+
+        .status-flagged {
+            color: #d29922;
+            background: rgba(210, 153, 34, 0.1);
+            border: 1px solid rgba(210, 153, 34, 0.2);
+        }
+
+        .status-unmatched {
+            color: #8b949e;
+            background: rgba(139, 148, 158, 0.1);
+            border: 1px solid rgba(139, 148, 158, 0.2);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -160,9 +508,18 @@
         </header>
 
         <div class="stats">
-            <div class="stat-card"><h3>Total Systems</h3><div class="value" id="stat-systems">-</div></div>
-            <div class="stat-card"><h3>Active Libraries</h3><div class="value" id="stat-libraries">-</div></div>
-            <div class="stat-card"><h3>Tracked Releases</h3><div class="value" id="stat-releases">-</div></div>
+            <div class="stat-card">
+                <h3>Total Systems</h3>
+                <div class="value" id="stat-systems">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Libraries</h3>
+                <div class="value" id="stat-libraries">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Tracked Releases</h3>
+                <div class="value" id="stat-releases">-</div>
+            </div>
         </div>
 
         <section class="section">
@@ -176,9 +533,37 @@
 
         <section class="section">
             <div class="section-header">
+                <h2>📦 Game Packs</h2>
+                <button class="btn" onclick="openPackBuilder()">Create Game Pack</button>
+            </div>
+            <div
+                style="background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem;">
+                <p style="color: var(--text-dim); margin-bottom: 1rem;">
+                    Select games from your library and export them in a format ready for your device.
+                </p>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div class="format-badge">
+                        <span style="font-size: 1.5rem;">🎮</span>
+                        <span>RetroArch</span>
+                    </div>
+                    <div class="format-badge">
+                        <span style="font-size: 1.5rem;">📺</span>
+                        <span>EmulationStation</span>
+                    </div>
+                    <div class="format-badge">
+                        <span style="font-size: 1.5rem;">📂</span>
+                        <span>Simple Folder</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="section-header">
                 <h2>📀 Systems</h2>
             </div>
-            <div id="systems-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:1rem;">
+            <div id="systems-container"
+                style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:1rem;">
                 <!-- System tags/mini-cards will be injected here -->
             </div>
         </section>
@@ -200,7 +585,8 @@
                     <div class="tab" onclick="setFilter('preferred')">Preferred</div>
                 </div>
                 <div class="search-box">
-                    <input type="text" id="game-search" class="search-input" placeholder="Search games..." oninput="renderItems()">
+                    <input type="text" id="game-search" class="search-input" placeholder="Search games..."
+                        oninput="renderItems()">
                 </div>
                 <div class="item-list" id="item-list">
                     <!-- Items injected here -->
@@ -211,6 +597,66 @@
             </div>
         </div>
     </div>
+
+    <!-- Pack Builder Modal -->
+    <div id="pack-view">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📦 Create Game Pack</h2>
+                <button class="btn btn-outline btn-sm" onclick="closePackBuilder()">Close (Esc)</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; height: 100%;">
+                    <!-- Left: System/Game Selection -->
+                    <div style="display: flex; flex-direction: column;">
+                        <h3 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-dim);">Select Games</h3>
+                        <div class="search-box">
+                            <input type="text" id="pack-search" class="search-input" placeholder="Search games..."
+                                oninput="renderPackGames()">
+                        </div>
+                        <div style="flex: 1; overflow-y: auto;" id="pack-game-list">
+                            <!-- Games injected here -->
+                        </div>
+                    </div>
+                    <!-- Right: Selected & Options -->
+                    <div style="display: flex; flex-direction: column;">
+                        <h3 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-dim);">Pack Settings</h3>
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Pack Name</label>
+                            <input type="text" id="pack-name" class="search-input" placeholder="my-gamepack"
+                                value="gamepack">
+                        </div>
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Export
+                                Format</label>
+                            <select id="pack-format" class="search-input" style="cursor: pointer;">
+                                <option value="retroarch">RetroArch (with playlists)</option>
+                                <option value="emulationstation">EmulationStation (with gamelist.xml)</option>
+                                <option value="simple">Simple (folder structure only)</option>
+                            </select>
+                        </div>
+                        <div
+                            style="flex: 1; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; overflow-y: auto;">
+                            <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.5rem;">Selected
+                                Games (<span id="selected-count">0</span>):</div>
+                            <div id="selected-games-list" style="font-size: 0.9rem;">
+                                <div style="color: var(--text-dim); font-style: italic;">No games selected</div>
+                            </div>
+                        </div>
+                        <div
+                            style="margin-top: 1rem; display: flex; align-items: center; justify-content: space-between;">
+                            <div id="pack-size" style="font-size: 0.9rem; color: var(--text-dim);">Estimated size: 0 MB
+                            </div>
+                            <button class="btn" onclick="generatePack()" id="generate-btn">
+                                <span>📥</span> Generate & Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         let state = {
@@ -258,7 +704,7 @@
 
             // Render Libraries
             const grid = document.getElementById('libs-grid');
-            grid.innerHTML = (state.libraries || []).map(l => 
+            grid.innerHTML = (state.libraries || []).map(l =>
                 `<div class="lib-card" onclick="openLibrary('${l.name}')">
                     <div style="display:flex; justify-content:space-between; align-items:start;">
                         <div>
@@ -282,7 +728,7 @@
 
             // Render Systems
             const sysCont = document.getElementById('systems-container');
-            sysCont.innerHTML = (state.systems || []).map(s => 
+            sysCont.innerHTML = (state.systems || []).map(s =>
                 `<div style="background:var(--card-bg); border:1px solid var(--border); padding:1rem; border-radius:12px;">
                     <div style="font-weight:600; font-size:1.1rem; margin-bottom:0.5rem">${s.name}</div>
                     <div style="color:var(--text-dim); font-size:0.85rem">${s.releases} releases tracked</div>
@@ -312,7 +758,7 @@
             document.getElementById('game-search').value = '';
             document.getElementById('modal-title').textContent = 'Library: ' + name;
             document.getElementById('detail-view').style.display = 'flex';
-            
+
             updateTabUI();
             await fetchItems();
         }
@@ -344,10 +790,10 @@
         function renderItems() {
             const list = document.getElementById('item-list');
             const search = document.getElementById('game-search').value.toLowerCase();
-            
+
             const filtered = (state.currentItems || []).filter(i => i.name.toLowerCase().includes(search));
-            
-            list.innerHTML = filtered.map((item, idx) => 
+
+            list.innerHTML = filtered.map((item, idx) =>
                 `<div class="game-item" onclick="toggleExpand(${idx})">
                     <div class="game-header">
                         <div class="game-name">${item.name}</div>
@@ -361,7 +807,7 @@
                 </div>`
             ).join('');
 
-            document.getElementById('modal-footer').textContent = 
+            document.getElementById('modal-footer').textContent =
                 'Showing ' + filtered.length + ' of ' + (state.currentItems ? state.currentItems.length : 0) + ' items';
         }
 
@@ -369,7 +815,7 @@
             const el = document.getElementById('details-' + idx);
             const card = el.parentElement;
             const isVisible = el.style.display === 'block';
-            
+
             // Close all
             document.querySelectorAll('.game-details').forEach(d => d.style.display = 'none');
             document.querySelectorAll('.game-item').forEach(c => c.classList.remove('expanded'));
@@ -382,10 +828,175 @@
 
         // Global key listeners
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') {
+                closeModal();
+                closePackBuilder();
+            }
         });
+
+        // ========== PACK BUILDER ==========
+        let packState = {
+            allGames: [],
+            selectedIds: new Set()
+        };
+
+        async function openPackBuilder() {
+            document.getElementById('pack-view').style.display = 'flex';
+            packState.selectedIds.clear();
+
+            // Load available games
+            const res = await api('/api/packs/games');
+            if (res && res.systems) {
+                packState.allGames = [];
+                res.systems.forEach(sys => {
+                    sys.games.forEach(g => {
+                        packState.allGames.push({
+                            ...g,
+                            system: sys.id,
+                            systemName: sys.name
+                        });
+                    });
+                });
+            }
+            renderPackGames();
+            updatePackSelection();
+        }
+
+        function closePackBuilder() {
+            document.getElementById('pack-view').style.display = 'none';
+        }
+
+        function renderPackGames() {
+            const list = document.getElementById('pack-game-list');
+            const search = (document.getElementById('pack-search').value || '').toLowerCase();
+
+            const filtered = packState.allGames.filter(g =>
+                g.name.toLowerCase().includes(search) || g.system.toLowerCase().includes(search)
+            );
+
+            // Group by system
+            const bySystem = {};
+            filtered.forEach(g => {
+                if (!bySystem[g.system]) bySystem[g.system] = [];
+                bySystem[g.system].push(g);
+            });
+
+            let html = '';
+            for (const sys of Object.keys(bySystem).sort()) {
+                const games = bySystem[sys];
+                const sysSelected = games.every(g => packState.selectedIds.has(g.id));
+                html += `<div style="margin-bottom: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 8px; cursor: pointer;" onclick="toggleSystem('${sys}')">
+                        <input type="checkbox" ${sysSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSystem('${sys}')">
+                        <span style="font-weight: 600;">${games[0].systemName || sys}</span>
+                        <span style="color: var(--text-dim); font-size: 0.85rem;">(${games.length} games)</span>
+                    </div>
+                    <div style="margin-left: 1.5rem;">
+                        ${games.map(g => `
+                            <div class="pack-game-item ${packState.selectedIds.has(g.id) ? 'selected' : ''}" onclick="toggleGame(${g.id})">
+                                <input type="checkbox" ${packState.selectedIds.has(g.id) ? 'checked' : ''} onclick="event.stopPropagation(); toggleGame(${g.id})">
+                                <span>${g.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }
+
+            list.innerHTML = html || '<div style="color: var(--text-dim); padding: 1rem;">No games found</div>';
+        }
+
+        function toggleSystem(sys) {
+            const games = packState.allGames.filter(g => g.system === sys);
+            const allSelected = games.every(g => packState.selectedIds.has(g.id));
+
+            games.forEach(g => {
+                if (allSelected) {
+                    packState.selectedIds.delete(g.id);
+                } else {
+                    packState.selectedIds.add(g.id);
+                }
+            });
+
+            renderPackGames();
+            updatePackSelection();
+        }
+
+        function toggleGame(id) {
+            if (packState.selectedIds.has(id)) {
+                packState.selectedIds.delete(id);
+            } else {
+                packState.selectedIds.add(id);
+            }
+            renderPackGames();
+            updatePackSelection();
+        }
+
+        function updatePackSelection() {
+            const selected = packState.allGames.filter(g => packState.selectedIds.has(g.id));
+            document.getElementById('selected-count').textContent = selected.length;
+
+            const totalSize = selected.reduce((sum, g) => sum + (g.size || 0), 0);
+            const sizeMB = (totalSize / 1024 / 1024).toFixed(1);
+            document.getElementById('pack-size').textContent = `Estimated size: ${sizeMB} MB`;
+
+            const listEl = document.getElementById('selected-games-list');
+            if (selected.length === 0) {
+                listEl.innerHTML = '<div style="color: var(--text-dim); font-style: italic;">No games selected</div>';
+            } else {
+                listEl.innerHTML = selected.slice(0, 20).map(g =>
+                    `<div style="padding: 0.25rem 0; border-bottom: 1px solid var(--border);">${g.name} <span style="color: var(--text-dim); font-size: 0.8rem;">(${g.system})</span></div>`
+                ).join('') + (selected.length > 20 ? `<div style="color: var(--text-dim); padding-top: 0.5rem;">...and ${selected.length - 20} more</div>` : '');
+            }
+        }
+
+        async function generatePack() {
+            const ids = Array.from(packState.selectedIds);
+            if (ids.length === 0) {
+                alert('Please select at least one game');
+                return;
+            }
+
+            const btn = document.getElementById('generate-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span>⏳</span> Generating...';
+            btn.disabled = true;
+
+            try {
+                const packName = document.getElementById('pack-name').value || 'gamepack';
+                const format = document.getElementById('pack-format').value;
+
+                const response = await fetch('/api/packs/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gameIds: ids, format, name: packName })
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                // Download the zip
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = packName + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                closePackBuilder();
+            } catch (e) {
+                alert('Error generating pack: ' + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
 
         init();
     </script>
 </body>
+
 </html>

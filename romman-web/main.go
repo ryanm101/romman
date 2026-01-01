@@ -15,6 +15,7 @@ import (
 	"github.com/ryanm101/romman-lib/db"
 	"github.com/ryanm101/romman-lib/library"
 	"github.com/ryanm101/romman-lib/metrics"
+	"github.com/ryanm101/romman-lib/pack"
 )
 
 //go:embed assets/*
@@ -82,6 +83,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/details", s.handleDetails)
+	s.mux.HandleFunc("/api/packs/games", s.handlePackGames)
+	s.mux.HandleFunc("/api/packs/generate", s.handlePackGenerate)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/", s.handleDashboard)
@@ -356,4 +359,162 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status": status,
 		"db":     fmt.Sprintf("%v", err == nil),
 	})
+}
+
+// handlePackGames returns games available for packing, grouped by system.
+func (s *Server) handlePackGames(w http.ResponseWriter, _ *http.Request) {
+	// Query matched games with file paths
+	rows, err := s.db.Query(`
+		SELECT 
+			s.name as system_id,
+			COALESCE(s.dat_name, s.name) as system_name,
+			r.id as release_id,
+			r.name as game_name,
+			sf.path as file_path,
+			COALESCE(sf.archive_path, '') as entry_name,
+			sf.size
+		FROM systems s
+		JOIN releases r ON r.system_id = s.id
+		JOIN rom_entries re ON re.release_id = r.id
+		JOIN matches m ON m.rom_entry_id = re.id
+		JOIN scanned_files sf ON m.scanned_file_id = sf.id
+		WHERE r.is_preferred = 1 OR NOT EXISTS (
+			SELECT 1 FROM releases r2 WHERE r2.system_id = s.id AND r2.is_preferred = 1
+		)
+		GROUP BY r.id
+		ORDER BY s.name, r.name
+	`)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	type gameInfo struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		FilePath string `json:"filePath"`
+		Size     int64  `json:"size"`
+	}
+	systemGames := make(map[string][]gameInfo)
+	systemNames := make(map[string]string)
+
+	for rows.Next() {
+		var systemID, systemName, gameName, filePath, entryName string
+		var releaseID, size int64
+		if err := rows.Scan(&systemID, &systemName, &releaseID, &gameName, &filePath, &entryName, &size); err != nil {
+			continue
+		}
+		systemNames[systemID] = systemName
+		systemGames[systemID] = append(systemGames[systemID], gameInfo{
+			ID:       releaseID,
+			Name:     gameName,
+			FilePath: filePath,
+			Size:     size,
+		})
+	}
+
+	// Build response
+	type systemInfo struct {
+		ID    string     `json:"id"`
+		Name  string     `json:"name"`
+		Games []gameInfo `json:"games"`
+	}
+	systems := make([]systemInfo, 0, len(systemGames))
+	for sysID, games := range systemGames {
+		systems = append(systems, systemInfo{
+			ID:    sysID,
+			Name:  systemNames[sysID],
+			Games: games,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"systems": systems})
+}
+
+// PackGenerateRequest is the request body for pack generation.
+type PackGenerateRequest struct {
+	GameIDs []int64 `json:"gameIds"`
+	Format  string  `json:"format"`
+	Name    string  `json:"name"`
+}
+
+// handlePackGenerate streams a zip file containing the requested games.
+func (s *Server) handlePackGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req PackGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.GameIDs) == 0 {
+		http.Error(w, "No games specified", http.StatusBadRequest)
+		return
+	}
+
+	// Lookup game details from database
+	games := make([]pack.Game, 0, len(req.GameIDs))
+	for _, id := range req.GameIDs {
+		var game pack.Game
+		err := s.db.QueryRow(`
+			SELECT 
+				r.id, r.name, s.name, COALESCE(s.dat_name, s.name),
+				sf.path, COALESCE(re.name, 'rom.bin'), sf.size
+			FROM releases r
+			JOIN systems s ON s.id = r.system_id
+			JOIN rom_entries re ON re.release_id = r.id
+			JOIN matches m ON m.rom_entry_id = re.id
+			JOIN scanned_files sf ON m.scanned_file_id = sf.id
+			WHERE r.id = ?
+			LIMIT 1
+		`, id).Scan(&game.ID, &game.Name, &game.System, &game.SystemName,
+			&game.FilePath, &game.FileName, &game.Size)
+		if err != nil {
+			continue // Skip games not found
+		}
+		games = append(games, game)
+	}
+
+	if len(games) == 0 {
+		http.Error(w, "No valid games found", http.StatusBadRequest)
+		return
+	}
+
+	// Determine format
+	format := pack.FormatSimple
+	switch req.Format {
+	case "retroarch":
+		format = pack.FormatRetroArch
+	case "emulationstation":
+		format = pack.FormatEmulationStation
+	case "simple":
+		format = pack.FormatSimple
+	}
+
+	// Set headers for zip download
+	packName := req.Name
+	if packName == "" {
+		packName = "gamepack"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", packName))
+
+	// Stream zip directly to response
+	generator := pack.NewGenerator()
+	_, err := generator.Generate(pack.Request{
+		Name:   packName,
+		Format: format,
+		Games:  games,
+	}, w)
+
+	if err != nil {
+		// Can't send error to client since we've already started writing
+		log.Printf("Error generating pack: %v", err)
+	}
 }
