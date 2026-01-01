@@ -495,6 +495,8 @@ func (s *Server) handlePackGenerate(w http.ResponseWriter, r *http.Request) {
 		format = pack.FormatEmulationStation
 	case "simple":
 		format = pack.FormatSimple
+	case "arkos":
+		format = pack.FormatArkOS
 	}
 
 	// Set headers for zip download

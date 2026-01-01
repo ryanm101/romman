@@ -15,7 +15,10 @@ const (
 	// FormatEmulationStation creates gamelist.xml files for EmulationStation.
 	FormatEmulationStation Format = "emulationstation"
 	// FormatSimple just copies ROMs with folder structure.
+	// FormatSimple just copies ROMs with folder structure.
 	FormatSimple Format = "simple"
+	// FormatArkOS creates file structure compatible with ArkOS (R36S etc) - alias for EmulationStation.
+	FormatArkOS Format = "arkos"
 )
 
 // Game represents a game to include in a pack.
@@ -68,6 +71,11 @@ func NewGenerator() *Generator {
 	g.RegisterExporter(&RetroArchExporter{})
 	g.RegisterExporter(&EmulationStationExporter{})
 	g.RegisterExporter(&SimpleExporter{})
+
+	// Register ArkOS as an alias for EmulationStation
+	esExporter := &EmulationStationExporter{}
+	g.exporters[FormatArkOS] = esExporter
+
 	return g
 }
 
