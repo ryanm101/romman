@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ryanm101/romman-lib/dat"
 	"github.com/ryanm101/romman-lib/library"
@@ -418,6 +419,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 
 	fmt.Println("\nAdding libraries...")
 	added := 0
+	existed := 0
 	stubsCreated := 0
 	for _, lib := range discovered {
 		// Create stub system if needed
@@ -435,7 +437,12 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 
 		_, err := manager.Add(lib.name, lib.path, lib.system)
 		if err != nil {
-			fmt.Printf("  %s: %v\n", lib.name, err)
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				fmt.Printf("  Skipped: %s (already exists)\n", lib.name)
+				existed++
+			} else {
+				fmt.Printf("  %s: %v\n", lib.name, err)
+			}
 			continue
 		}
 		if lib.stubCreated {
@@ -446,6 +453,9 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		added++
 	}
 	fmt.Printf("\nAdded %d libraries", added)
+	if existed > 0 {
+		fmt.Printf(" (%d already existed)", existed)
+	}
 	if stubsCreated > 0 {
 		fmt.Printf(" (%d stub systems created)", stubsCreated)
 	}
