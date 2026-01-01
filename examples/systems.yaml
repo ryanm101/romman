@@ -1,0 +1,33 @@
+# ROM Manager System Mappings
+# This file allows you to add custom directory-to-system mappings
+# without modifying the source code.
+#
+# User mappings take precedence over built-in defaults.
+#
+# Locations searched (in order):
+#   1. ROMMAN_SYSTEMS_FILE environment variable (if set)
+#   2. ./systems.yaml (current directory)
+#   3. ~/.config/romman/systems.yaml
+#   4. /etc/romman/systems.yaml
+
+# Map directory names to system IDs
+# Keys should be lowercase
+directory_mappings:
+  # Examples:
+  # mynes: nes
+  # my-custom-roms: snes
+  # nintendo_nes: nes
+
+# Map DAT name patterns to system IDs  
+# For automatic DAT import detection
+dat_mappings:
+  # Examples:
+  # "my custom nes dat": nes
+  # "redump - sony playstation": psx
+
+# Custom display names for systems
+# Override how systems appear in output
+display_names:
+  # Examples:
+  # nes: "Nintendo Entertainment System (NES)"
+  # snes: "Super Nintendo"

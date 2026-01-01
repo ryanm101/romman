@@ -46,11 +46,20 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 		showUnmatchedFiles(args[1])
 	case "discover":
 		if len(args) < 2 {
-			fmt.Println("Usage: romman library discover <parent-dir> [--add]")
+			fmt.Println("Usage: romman library discover <parent-dir> [--add] [--force]")
 			os.Exit(1)
 		}
-		autoAdd := len(args) >= 3 && args[2] == "--add"
-		discoverLibraries(args[1], autoAdd)
+		autoAdd := false
+		force := false
+		for _, arg := range args[2:] {
+			switch arg {
+			case "--add":
+				autoAdd = true
+			case "--force":
+				force = true
+			}
+		}
+		discoverLibraries(args[1], autoAdd, force)
 	case "scan-all":
 		scanAllLibraries(ctx)
 	case "rename":
@@ -313,7 +322,7 @@ func showUnmatchedFiles(name string) {
 	}
 }
 
-func discoverLibraries(parentDir string, autoAdd bool) {
+func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 	database, err := openDB()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
@@ -335,11 +344,13 @@ func discoverLibraries(parentDir string, autoAdd bool) {
 
 	manager := library.NewManager(database.Conn())
 
-	discovered := make([]struct {
-		name   string
-		path   string
-		system string
-	}, 0, 10)
+	type discoveredLib struct {
+		name        string
+		path        string
+		system      string
+		stubCreated bool
+	}
+	discovered := make([]discoveredLib, 0, 10)
 
 	fmt.Printf("Discovering libraries in: %s\n\n", absPath)
 
@@ -360,38 +371,67 @@ func discoverLibraries(parentDir string, autoAdd bool) {
 		var systemExists bool
 		err := database.Conn().QueryRow("SELECT 1 FROM systems WHERE name = ?", system).Scan(&systemExists)
 		if err != nil {
-			fmt.Printf("  %-20s -> %s (no DAT imported, skipped)\n", dirName, system)
+			// System doesn't exist in DB
+			if force {
+				fmt.Printf("  %-20s -> %s (stub system will be created)\n", dirName, system)
+				discovered = append(discovered, discoveredLib{dirName, dirPath, system, true})
+			} else {
+				fmt.Printf("  %-20s -> %s (no DAT imported, skipped)\n", dirName, system)
+			}
 			continue
 		}
 
 		fmt.Printf("  %-20s -> %s\n", dirName, system)
-		discovered = append(discovered, struct {
-			name   string
-			path   string
-			system string
-		}{dirName, dirPath, system})
+		discovered = append(discovered, discoveredLib{dirName, dirPath, system, false})
 	}
 
 	fmt.Printf("\nFound %d libraries\n", len(discovered))
 
 	if !autoAdd {
-		fmt.Println("\nTo add these libraries, run with --add flag:")
-		fmt.Printf("  romman library discover %s --add\n", parentDir)
+		if force {
+			fmt.Println("\nTo add these libraries with stub systems, run with --add --force flags:")
+			fmt.Printf("  romman library discover %s --add --force\n", parentDir)
+		} else {
+			fmt.Println("\nTo add these libraries, run with --add flag:")
+			fmt.Printf("  romman library discover %s --add\n", parentDir)
+		}
 		return
 	}
 
 	fmt.Println("\nAdding libraries...")
 	added := 0
+	stubsCreated := 0
 	for _, lib := range discovered {
+		// Create stub system if needed
+		if lib.stubCreated {
+			_, err := database.Conn().Exec(`
+				INSERT OR IGNORE INTO systems (name, dat_name, description, created_at, updated_at)
+				VALUES (?, ?, ?, datetime('now'), datetime('now'))
+			`, lib.system, lib.system, fmt.Sprintf("Stub system for %s (no DAT imported)", lib.system))
+			if err != nil {
+				fmt.Printf("  %s: failed to create stub system: %v\n", lib.name, err)
+				continue
+			}
+			stubsCreated++
+		}
+
 		_, err := manager.Add(lib.name, lib.path, lib.system)
 		if err != nil {
 			fmt.Printf("  %s: %v\n", lib.name, err)
 			continue
 		}
-		fmt.Printf("  Added: %s\n", lib.name)
+		if lib.stubCreated {
+			fmt.Printf("  Added: %s (stub system created)\n", lib.name)
+		} else {
+			fmt.Printf("  Added: %s\n", lib.name)
+		}
 		added++
 	}
-	fmt.Printf("\nAdded %d libraries\n", added)
+	fmt.Printf("\nAdded %d libraries", added)
+	if stubsCreated > 0 {
+		fmt.Printf(" (%d stub systems created)", stubsCreated)
+	}
+	fmt.Println()
 }
 
 func scanAllLibraries(ctx context.Context) {

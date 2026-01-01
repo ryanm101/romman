@@ -92,6 +92,8 @@ var DirectoryNameMapping = map[string]string{
 	"nes":            "nes",
 	"famicom":        "nes",
 	"fc":             "nes",
+	"fds":            "fds",
+	"famicondisk":    "fds",
 	"snes":           "snes",
 	"superfamicom":   "snes",
 	"sfc":            "snes",
@@ -109,6 +111,8 @@ var DirectoryNameMapping = map[string]string{
 	"gamecube":       "gc",
 	"gc":             "gc",
 	"wii":            "wii",
+	"virtualboy":     "vb",
+	"vb":             "vb",
 
 	// Sega
 	"megadrive":    "md",
@@ -120,11 +124,14 @@ var DirectoryNameMapping = map[string]string{
 	"gamegear":     "gg",
 	"gg":           "gg",
 	"32x":          "32x",
+	"sega32x":      "32x",
 	"segacd":       "segacd",
 	"sega-cd":      "segacd",
 	"saturn":       "saturn",
 	"dreamcast":    "dc",
 	"dc":           "dc",
+	"sg1000":       "sg1000",
+	"sg-1000":      "sg1000",
 
 	// Sony
 	"psx":          "psx",
@@ -146,41 +153,89 @@ var DirectoryNameMapping = map[string]string{
 	"lynx":      "atarilynx",
 	"atarilynx": "atarilynx",
 	"jaguar":    "atarijaguar",
+	"atarist":   "atarist",
+	"st":        "atarist",
 
-	// Other
-	"amiga":        "amiga",
-	"c64":          "c64",
-	"commodore64":  "c64",
-	"mame":         "mame",
-	"arcade":       "mame",
-	"fbneo":        "fbneo",
-	"neogeo":       "neogeo",
+	// NEC
 	"pce":          "pce",
 	"pcengine":     "pce",
 	"turbografx":   "pce",
-	"turbografx16": "pce",
-	"wonderswan":   "wswan",
-	"coleco":       "coleco",
-	"vectrex":      "vectrex",
-	"msx":          "msx",
+	"tg16":         "pce",
+	"pcenginecd":   "pcecd",
+	"pcecd":        "pcecd",
+	"turbografxcd": "pcecd",
+	"supergrafx":   "sgx",
+	"sgx":          "sgx",
+	"pcfx":         "pcfx",
+
+	// SNK
+	"neogeo":            "neogeo",
+	"ngp":               "ngp",
+	"ngpc":              "ngpc",
+	"neogeopocket":      "ngp",
+	"neogeopocketcolor": "ngpc",
+
+	// Bandai
+	"wonderswan":      "wswan",
+	"wswan":           "wswan",
+	"ws":              "wswan",
+	"wswanc":          "wsc",
+	"wsc":             "wsc",
+	"wonderswancolor": "wsc",
+
+	// Other consoles
+	"coleco":        "coleco",
+	"colecovision":  "coleco",
+	"vectrex":       "vectrex",
+	"intv":          "intv",
+	"intellivision": "intv",
+	"odyssey2":      "odyssey2",
+	"o2em":          "odyssey2",
+	"3do":           "3do",
+
+	// Computers
+	"amiga":       "amiga",
+	"c64":         "c64",
+	"commodore64": "c64",
+	"msx":         "msx",
+	"msx1":        "msx",
+	"msx2":        "msx2",
+	"amstradcpc":  "cpc",
+	"cpc":         "cpc",
+	"apple2":      "apple2",
+	"zx81":        "zx81",
+	"zxspectrum":  "zxspectrum",
+	"spectrum":    "zxspectrum",
+
+	// Arcade
+	"mame":        "mame",
+	"arcade":      "mame",
+	"fbneo":       "fbneo",
+	"fba":         "fba",
+	"fbalibretro": "fba",
 }
 
 // DetectSystemFromDirName attempts to match a directory name to a known system.
 // Returns the system ID and true if found, empty string and false otherwise.
+// Mappings are loaded from embedded defaults merged with user-defined systems.yaml.
 func DetectSystemFromDirName(dirName string) (string, bool) {
 	// Normalize: lowercase and remove common separators
 	normalized := strings.ToLower(dirName)
 	normalized = strings.ReplaceAll(normalized, "-", "")
 	normalized = strings.ReplaceAll(normalized, "_", "")
 	normalized = strings.ReplaceAll(normalized, " ", "")
+	lowerDir := strings.ToLower(dirName)
 
-	// Try exact match first
-	if sys, ok := DirectoryNameMapping[normalized]; ok {
+	// Load mappings (embedded defaults + user overrides, cached after first load)
+	cfg := LoadSystemMappings()
+
+	// Try normalized lookup first
+	if sys, ok := cfg.DirectoryMappings[normalized]; ok {
 		return sys, true
 	}
 
 	// Try original lowercase
-	if sys, ok := DirectoryNameMapping[strings.ToLower(dirName)]; ok {
+	if sys, ok := cfg.DirectoryMappings[lowerDir]; ok {
 		return sys, true
 	}
 
