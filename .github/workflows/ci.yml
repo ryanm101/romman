@@ -138,6 +138,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for changelog generation
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -151,13 +153,25 @@ jobs:
           chmod +x release/*
           cd release && tar -czvf ../romman-${{ github.ref_name }}-linux-amd64.tar.gz *
 
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_REPO: ${{ github.repository }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: romman-${{ github.ref_name }}-linux-amd64.tar.gz
-          generate_release_notes: true
           body: |
+            ${{ steps.changelog.outputs.content }}
+
             ## Docker Image
             ```bash
             docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ```
+
