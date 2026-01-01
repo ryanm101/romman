@@ -350,8 +350,12 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		system      string
 		stubCreated bool
 	}
+	type skippedDir struct {
+		name   string
+		reason string
+	}
 	discovered := make([]discoveredLib, 0, 10)
-	skipped := 0
+	skippedDirs := make([]skippedDir, 0, 10)
 
 	fmt.Printf("Discovering libraries in: %s\n\n", absPath)
 
@@ -366,7 +370,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		system, found := dat.DetectSystemFromDirName(dirName)
 		if !found {
 			fmt.Printf("  %-20s -> (unknown system, skipped)\n", dirName)
-			skipped++
+			skippedDirs = append(skippedDirs, skippedDir{dirName, "unknown system"})
 			continue
 		}
 
@@ -379,7 +383,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 				discovered = append(discovered, discoveredLib{dirName, dirPath, system, true})
 			} else {
 				fmt.Printf("  %-20s -> %s (no DAT imported, skipped)\n", dirName, system)
-				skipped++
+				skippedDirs = append(skippedDirs, skippedDir{dirName, "no DAT imported for " + system})
 			}
 			continue
 		}
@@ -389,10 +393,17 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 	}
 
 	fmt.Printf("\nFound %d libraries", len(discovered))
-	if skipped > 0 {
-		fmt.Printf(" (%d skipped)", skipped)
+	if len(skippedDirs) > 0 {
+		fmt.Printf(" (%d skipped)", len(skippedDirs))
 	}
 	fmt.Println()
+
+	if len(skippedDirs) > 0 {
+		fmt.Println("\nSkipped directories:")
+		for _, s := range skippedDirs {
+			fmt.Printf("  %-20s - %s\n", s.name, s.reason)
+		}
+	}
 
 	if !autoAdd {
 		if force {
