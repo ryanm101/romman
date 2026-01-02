@@ -25,6 +25,13 @@ test-short:
 	$(MAKE) -C romman-tui test-short
 	$(MAKE) -C romman-web test-short
 
+
+test-cover:
+	$(MAKE) -C romman-lib test-cover
+	$(MAKE) -C romman-cli test-cover
+	$(MAKE) -C romman-tui test-cover
+	$(MAKE) -C romman-web test-cover
+
 # Lint
 lint:
 	$(MAKE) -C romman-lib lint

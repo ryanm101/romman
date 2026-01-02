@@ -30,6 +30,8 @@ type Rom struct {
 // Game represents a game entry in the DAT file.
 type Game struct {
 	Name        string `xml:"name,attr"`
+	CloneOf     string `xml:"cloneof,attr"`
+	RomOf       string `xml:"romof,attr"`
 	Description string `xml:"description"`
 	Roms        []Rom  `xml:"rom"`
 }

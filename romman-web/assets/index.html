@@ -800,14 +800,20 @@
 
             list.innerHTML = filtered.map((item, idx) =>
                 `<div class="game-item" onclick="toggleExpand(${idx})">
-                    <div class="game-header">
-                        <div class="game-name">${item.name}</div>
-                        <span class="status-pill status-${item.status}">${item.status}</span>
-                    </div>
-                    <div class="game-details" id="details-${idx}">
-                        ${item.path ? `<span>Path: <b>${item.path}</b></span>` : ''}
-                        ${item.matchType ? `<span>Match: <b>${item.matchType}</b></span>` : ''}
-                        ${item.flags ? `<span>Flags: <b>${item.flags}</b></span>` : ''}
+                    <div style="display:flex; gap:1rem; align-items:start;">
+                        ${item.boxart ? `<img src="${item.boxart}" style="width:60px; height:80px; object-fit:cover; border-radius:4px; background:#222;" alt="boxart">` : ''}
+                        <div style="flex:1">
+                            <div class="game-header">
+                                <div class="game-name">${item.name}</div>
+                                <span class="status-pill status-${item.status}">${item.status}</span>
+                            </div>
+                            <div class="game-details" id="details-${idx}">
+                                ${item.description ? `<p style="margin-bottom:0.5rem; font-style:italic; color:#aaa;">${item.description}</p>` : ''}
+                                ${item.path ? `<span>Path: <b>${item.path}</b></span>` : ''}
+                                ${item.matchType ? `<span>Match: <b>${item.matchType}</b></span>` : ''}
+                                ${item.flags ? `<span>Flags: <b>${item.flags}</b></span>` : ''}
+                            </div>
+                        </div>
                     </div>
                 </div>`
             ).join('');

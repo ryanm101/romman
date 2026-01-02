@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -59,15 +61,18 @@ func main() {
 
 // Server handles HTTP requests.
 type Server struct {
-	db  *sql.DB
-	mux *http.ServeMux
+	db        *sql.DB
+	mux       *http.ServeMux
+	mediaRoot string
 }
 
 // NewServer creates a new web server.
 func NewServer(conn *sql.DB) *Server {
+	home, _ := os.UserHomeDir()
 	s := &Server{
-		db:  conn,
-		mux: http.NewServeMux(),
+		db:        conn,
+		mux:       http.NewServeMux(),
+		mediaRoot: fmt.Sprintf("%s/.romman/media", home),
 	}
 	s.setupRoutes()
 	return s
@@ -83,6 +88,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/details", s.handleDetails)
+	s.mux.HandleFunc("/api/media/", s.handleMedia) // Note trailing slash for prefix matching
 	s.mux.HandleFunc("/api/packs/games", s.handlePackGames)
 	s.mux.HandleFunc("/api/packs/generate", s.handlePackGenerate)
 	s.mux.HandleFunc("/health", s.handleHealth)
@@ -217,21 +223,35 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 	switch filter {
 	case "matched":
 		rows, err := s.db.Query(`
-			SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, '')
+			SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, ''),
+				COALESCE(gm.local_path, ''), COALESCE(gmd.description, '')
 			FROM scanned_files sf
 			JOIN matches m ON m.scanned_file_id = sf.id
 			JOIN rom_entries re ON re.id = m.rom_entry_id
 			JOIN releases r ON r.id = re.release_id
 			JOIN libraries l ON l.id = sf.library_id
+			LEFT JOIN game_media gm ON gm.release_id = r.id AND gm.type = 'boxart'
+			LEFT JOIN game_metadata gmd ON gmd.release_id = r.id
 			WHERE l.name = ? AND m.match_type IN ('sha1', 'crc32')
 			ORDER BY r.name
 		`, libName)
 		if err == nil {
 			defer func() { _ = rows.Close() }()
 			for rows.Next() {
-				var name, path, matchType, flags string
-				_ = rows.Scan(&name, &path, &matchType, &flags)
-				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "flags": flags, "status": "matched"})
+				var name, path, matchType, flags, mediaPath, desc string
+				_ = rows.Scan(&name, &path, &matchType, &flags, &mediaPath, &desc)
+
+				item := map[string]string{
+					"name": name, "path": path, "matchType": matchType,
+					"flags": flags, "status": "matched",
+					"description": desc,
+				}
+				if mediaPath != "" {
+					if rel, err := filepath.Rel(s.mediaRoot, mediaPath); err == nil {
+						item["boxart"] = "/api/media/" + rel
+					}
+				}
+				items = append(items, item)
 			}
 		}
 	case "missing":
@@ -321,10 +341,27 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "status": status})
 			}
 		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
+	}
+}
+
+func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
+	// Path: /api/media/snes/123-boxart.jpg
+	// Strip prefix
+	relPath := r.URL.Path[len("/api/media/"):]
+	if relPath == "" || strings.Contains(relPath, "..") {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	fullPath := filepath.Join(s.mediaRoot, relPath)
+	http.ServeFile(w, r, fullPath)
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, _ *http.Request) {

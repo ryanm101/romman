@@ -12,5 +12,9 @@ test-short:
 lint:
 	golangci-lint run ./...
 
+test-cover:
+	go test -coverprofile=../coverage-cli.out ./...
+	go tool cover -html=../coverage-cli.out -o ../coverage-cli.html
+
 clean:
 	rm -f ../bin/romman

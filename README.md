@@ -65,6 +65,36 @@ Binaries will be available in the `bin/` directory.
     ```
 
 
+
+## Metadata & Media
+
+`romman` integrates with IGDB to fetch game metadata and download boxart.
+
+### Setup
+
+Obtain your Client ID and Secret from the [Twitch Developer Console](https://dev.twitch.tv/console).
+
+```bash
+export IGDB_CLIENT_ID="your_client_id"
+export IGDB_CLIENT_SECRET="your_client_secret"
+```
+
+### Usage
+
+Scrape metadata for a specific release ID (requires a valid database ID):
+
+```bash
+romman scrape <release_id>
+```
+
+Or bulk scrape an entire library:
+
+```bash
+romman library scrape "My Library"
+```
+
+The metadata and boxart will be available in the Web UI.
+
 ## Observability
 
 ROM Manager includes built-in support for structured logging and OpenTelemetry tracing.
