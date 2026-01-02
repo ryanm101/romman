@@ -31,16 +31,21 @@ type model struct {
 	err       error
 
 	// Detail view
-	inDetail     bool
-	detailFilter detailFilter
-	detailItems  []detailItem
-	detailCounts map[detailFilter]int
-	detailCursor int
-	selectedLib  string
+	inDetail      bool
+	detailFilter  detailFilter
+	detailItems   []detailItem
+	detailCounts  map[detailFilter]int
+	detailCursor  int
+	selectedLib   string
+	loadingDetail bool
 
 	// Search
 	searching   bool
 	searchQuery string
+
+	// Status
+	scanning  bool
+	statusMsg string
 }
 
 type panel int
@@ -161,22 +166,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "1", "m": // Matched
 				m.detailFilter = filterMatched
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			case "2", "i": // mIssing
 				m.detailFilter = filterMissing
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			case "3", "f": // Flagged
 				m.detailFilter = filterFlagged
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			case "4", "u": // Unmatched
 				m.detailFilter = filterUnmatched
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			case "5", "p": // Preferred
 				m.detailFilter = filterPreferred
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			}
 			return m, nil
@@ -219,13 +229,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedLib = m.libraries[m.cursor].Name
 				m.detailFilter = filterMatched
 				m.detailCursor = 0
+				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
 			}
 		case "s":
 			if m.panel == panelLibraries && m.cursor < len(m.libraries) {
+				m.scanning = true
+				m.statusMsg = fmt.Sprintf("Scanning %s...", m.libraries[m.cursor].Name)
 				return m, scanLibrary(m.libraries[m.cursor].Name)
+			} else if m.panel == panelSystems && m.cursor < len(m.systems) {
+				// Scan all libraries for this system
+				systemName := m.systems[m.cursor].Name
+				var libsToScan []string
+				for _, lib := range m.libraries {
+					if lib.System == systemName {
+						libsToScan = append(libsToScan, lib.Name)
+					}
+				}
+				if len(libsToScan) == 0 {
+					m.statusMsg = fmt.Sprintf("No libraries for %s", systemName)
+					return m, nil
+				}
+				m.scanning = true
+				m.statusMsg = fmt.Sprintf("Scanning %d libraries for %s...", len(libsToScan), systemName)
+				return m, scanLibraries(libsToScan)
 			}
 		case "r":
+			m.statusMsg = "Refreshing..."
 			return m, tea.Batch(loadSystems, loadLibraries)
 		}
 
@@ -236,13 +266,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case librariesMsg:
 		m.libraries = msg.libraries
 		m.err = msg.err
+		if m.statusMsg == "Refreshing..." {
+			m.statusMsg = ""
+		}
 
 	case scanCompleteMsg:
+		m.scanning = false
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Scan failed: %v", msg.err)
+		} else {
+			m.statusMsg = "Scan complete!"
+		}
 		return m, loadLibraries
 
 	case detailMsg:
 		m.detailItems = msg.items
 		m.detailCounts = msg.counts
+		m.loadingDetail = false
 	}
 
 	return m, nil
@@ -300,6 +340,14 @@ func (m model) viewMain() string {
 		Background(lipgloss.Color("57")).
 		Foreground(lipgloss.Color("255"))
 
+	// Calculate max visible items based on terminal height
+	// Panel chrome: border (2) + padding (2) + title (2) = 6 lines
+	// Footer: help (2) + status (1) + title (2) = 5 lines
+	maxVisibleItems := m.height - 15
+	if maxVisibleItems < 5 {
+		maxVisibleItems = 5
+	}
+
 	// Systems panel
 	systemsStyle := panelStyle
 	if m.panel == panelSystems {
@@ -313,12 +361,30 @@ func (m model) viewMain() string {
 	} else if len(m.systems) == 0 {
 		systemsContent += "No systems imported.\nUse CLI: romman dat import <file>"
 	} else {
-		for i, s := range m.systems {
+		// Calculate scroll window for systems
+		sysStart := 0
+		sysCursor := 0
+		if m.panel == panelSystems {
+			sysCursor = m.cursor
+		}
+		if sysCursor >= maxVisibleItems {
+			sysStart = sysCursor - maxVisibleItems + 1
+		}
+		sysEnd := sysStart + maxVisibleItems
+		if sysEnd > len(m.systems) {
+			sysEnd = len(m.systems)
+		}
+
+		for i := sysStart; i < sysEnd; i++ {
+			s := m.systems[i]
 			line := fmt.Sprintf("%-8s %d games", s.Name, s.ReleaseCount)
 			if m.panel == panelSystems && i == m.cursor {
 				line = selectedStyle.Render(line)
 			}
 			systemsContent += line + "\n"
+		}
+		if len(m.systems) > maxVisibleItems {
+			systemsContent += fmt.Sprintf("  (%d/%d)\n", sysCursor+1, len(m.systems))
 		}
 	}
 	systemsPanel := systemsStyle.Render(systemsContent)
@@ -331,10 +397,28 @@ func (m model) viewMain() string {
 
 	var libsContent string
 	libsContent += titleStyle.Render("📁 Libraries") + "\n\n"
-	if len(m.libraries) == 0 {
+	if m.err != nil && len(m.systems) > 0 && len(m.libraries) == 0 {
+		// Show error if systems loaded but libraries didn't (indicates library-specific error)
+		libsContent += fmt.Sprintf("Error loading: %v", m.err)
+	} else if len(m.libraries) == 0 {
 		libsContent += "No libraries configured.\nUse CLI: romman library add"
 	} else {
-		for i, lib := range m.libraries {
+		// Calculate scroll window for libraries
+		libStart := 0
+		libCursor := 0
+		if m.panel == panelLibraries {
+			libCursor = m.cursor
+		}
+		if libCursor >= maxVisibleItems {
+			libStart = libCursor - maxVisibleItems + 1
+		}
+		libEnd := libStart + maxVisibleItems
+		if libEnd > len(m.libraries) {
+			libEnd = len(m.libraries)
+		}
+
+		for i := libStart; i < libEnd; i++ {
+			lib := m.libraries[i]
 			pct := 0
 			if lib.TotalGames > 0 {
 				pct = lib.GamesInLib * 100 / lib.TotalGames
@@ -348,6 +432,9 @@ func (m model) viewMain() string {
 				line = selectedStyle.Render(line)
 			}
 			libsContent += line + "\n"
+		}
+		if len(m.libraries) > maxVisibleItems {
+			libsContent += fmt.Sprintf("  (%d/%d)\n", libCursor+1, len(m.libraries))
 		}
 	}
 	libsPanel := libsStyle.Render(libsContent)
@@ -368,6 +455,9 @@ func (m model) viewMain() string {
 		Foreground(lipgloss.Color("241")).
 		Width(m.width)
 	status := fmt.Sprintf(" DB: %s", getDBPath())
+	if m.statusMsg != "" {
+		status = " " + m.statusMsg
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render("🎮 ROM Manager"),
@@ -414,12 +504,11 @@ func (m model) viewDetail() string {
 		tabBar += style.Render(label) + " "
 	}
 
-	// Content
+	// Content - let height be determined by content, which is controlled by maxShow
 	contentStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(0, 1).
-		Width(m.width - 4).
-		Height(m.height - 10)
+		Width(m.width - 4)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("57")).
@@ -434,10 +523,21 @@ func (m model) viewDetail() string {
 	filteredItems := m.getFilteredItems()
 
 	var content string
-	if len(filteredItems) == 0 {
+	if m.loadingDetail {
+		content = "\n  Loading..."
+	} else if len(filteredItems) == 0 {
 		content = "\n  No items found."
 	} else {
-		maxShow := m.height - 15
+		// Calculate available lines, accounting for header/footer chrome
+		// Reserve extra space for: selected item details (path+matchtype = 2 lines), counter line, padding
+		availableHeight := m.height - 18
+		if availableHeight < 5 {
+			availableHeight = 5 // Minimum reasonable height
+		}
+
+		// Adjust for selected item's extra detail lines
+		maxShow := availableHeight - 2 // Reserve 2 lines for selected item's path/matchtype
+
 		start := 0
 		if m.detailCursor >= maxShow {
 			start = m.detailCursor - maxShow + 1
@@ -445,6 +545,9 @@ func (m model) viewDetail() string {
 		end := start + maxShow
 		if end > len(filteredItems) {
 			end = len(filteredItems)
+		}
+		if start < 0 {
+			start = 0
 		}
 
 		for i := start; i < end; i++ {
@@ -468,7 +571,15 @@ func (m model) viewDetail() string {
 				}
 			}
 
+			// Truncate long names to fit width
+			maxNameLen := m.width - 10
+			if maxNameLen < 20 {
+				maxNameLen = 20
+			}
 			line := item.Name
+			if len(line) > maxNameLen {
+				line = line[:maxNameLen-3] + "..."
+			}
 			if item.Flags != "" {
 				line += fmt.Sprintf(" [%s]", item.Flags)
 			}
@@ -476,7 +587,12 @@ func (m model) viewDetail() string {
 			if i == m.detailCursor {
 				line = selectedStyle.Render("> " + line)
 				if item.Path != "" {
-					line += "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(item.Path)
+					// Truncate path too
+					pathDisplay := item.Path
+					if len(pathDisplay) > maxNameLen {
+						pathDisplay = "..." + pathDisplay[len(pathDisplay)-maxNameLen+3:]
+					}
+					line += "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(pathDisplay)
 				}
 				if item.MatchType != "" {
 					line += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("57")).Render("("+item.MatchType+")")
@@ -545,7 +661,9 @@ type librariesMsg struct {
 	err       error
 }
 
-type scanCompleteMsg struct{}
+type scanCompleteMsg struct {
+	err error
+}
 
 type detailMsg struct {
 	items  []detailItem
@@ -814,14 +932,35 @@ func scanLibrary(name string) tea.Cmd {
 	return func() tea.Msg {
 		database, err := db.Open(getDBPath())
 		if err != nil {
-			return scanCompleteMsg{}
+			return scanCompleteMsg{err: err}
 		}
 		defer func() { _ = database.Close() }()
 
 		scanner := library.NewScanner(database.Conn())
-		_, _ = scanner.Scan(context.Background(), name)
+		_, err = scanner.Scan(context.Background(), name)
 
-		return scanCompleteMsg{}
+		return scanCompleteMsg{err: err}
+	}
+}
+
+// scanLibraries scans multiple libraries sequentially
+func scanLibraries(names []string) tea.Cmd {
+	return func() tea.Msg {
+		database, err := db.Open(getDBPath())
+		if err != nil {
+			return scanCompleteMsg{err: err}
+		}
+		defer func() { _ = database.Close() }()
+
+		scanner := library.NewScanner(database.Conn())
+		var lastErr error
+		for _, name := range names {
+			if _, err := scanner.Scan(context.Background(), name); err != nil {
+				lastErr = err
+			}
+		}
+
+		return scanCompleteMsg{err: lastErr}
 	}
 }
 

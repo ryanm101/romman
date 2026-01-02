@@ -20,6 +20,18 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Enable WAL mode for better concurrent access
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout to 30 seconds to wait for locks instead of failing immediately
+	if _, err := conn.Exec("PRAGMA busy_timeout=30000"); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
+
 	// Enable foreign keys
 	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		_ = conn.Close()
