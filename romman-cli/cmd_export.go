@@ -36,20 +36,20 @@ func handleExportCommand(args []string) {
 	format := library.ExportFormat(args[2])
 
 	switch reportType {
-	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched, library.Report1G1R:
+	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched, library.Report1G1R, library.ReportStats, library.ReportDuplicates, library.ReportMismatch:
 		// valid
 	default:
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown report type: %s\n", args[1])
-		fmt.Println("Valid reports: matched, missing, preferred, unmatched, 1g1r")
+		fmt.Println("Valid reports: matched, missing, preferred, unmatched, 1g1r, stats, duplicates, mismatch")
 		os.Exit(1)
 	}
 
 	switch format {
-	case library.FormatCSV, library.FormatJSON:
+	case library.FormatCSV, library.FormatJSON, library.FormatTXT:
 		// valid
 	default:
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown format: %s\n", args[2])
-		fmt.Println("Valid formats: csv, json")
+		fmt.Println("Valid formats: csv, json, txt")
 		os.Exit(1)
 	}
 

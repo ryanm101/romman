@@ -208,3 +208,45 @@ func TestExporter_CSVEscapesCommas(t *testing.T) {
 	// CSV should properly quote the comma in the name
 	assert.True(t, strings.Contains(csv, `"Game, The (USA)"`))
 }
+
+func TestExporter_ExportMissing_TXT(t *testing.T) {
+	conn := setupExportTestDB(t)
+	setupExportTestData(t, conn)
+
+	manager := NewManager(conn)
+	exporter := NewExporter(conn, manager)
+
+	data, err := exporter.Export("testlib", ReportMissing, FormatTXT)
+	require.NoError(t, err)
+
+	txt := string(data)
+	// Should contain the game name (one per line)
+	assert.Contains(t, txt, "Test Game (USA)")
+	// Should be plain text, not JSON or CSV
+	assert.NotContains(t, txt, "{")
+	assert.NotContains(t, txt, "name,")
+}
+
+func TestExporter_TXT_OneNamePerLine(t *testing.T) {
+	conn := setupExportTestDB(t)
+	setupExportTestData(t, conn)
+
+	// Add a second release
+	_, err := conn.Exec(`
+		INSERT INTO releases (system_id, name)
+		VALUES (1, 'Another Game (Europe)')
+	`)
+	require.NoError(t, err)
+
+	manager := NewManager(conn)
+	exporter := NewExporter(conn, manager)
+
+	data, err := exporter.Export("testlib", ReportMissing, FormatTXT)
+	require.NoError(t, err)
+
+	txt := string(data)
+	lines := strings.Split(strings.TrimSpace(txt), "\n")
+	assert.Len(t, lines, 2)
+	assert.Contains(t, lines[0], "Game")
+	assert.Contains(t, lines[1], "Game")
+}
