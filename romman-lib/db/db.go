@@ -106,6 +106,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 7 {
+		if err := db.migrateV7(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -303,6 +308,39 @@ func (db *DB) migrateV6() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v6 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV7 adds multi-DAT source support.
+func (db *DB) migrateV7() error {
+	schema := `
+		-- Track multiple DAT sources per system
+		CREATE TABLE IF NOT EXISTS dat_sources (
+			id INTEGER PRIMARY KEY,
+			system_id INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+			source_type TEXT NOT NULL,       -- 'no-intro', 'redump', 'tosec', 'mame', 'other'
+			dat_name TEXT,                   -- Original DAT header name
+			dat_version TEXT,
+			dat_date TEXT,
+			dat_file_path TEXT,              -- Original import path
+			dat_file_hash TEXT,              -- SHA256 of DAT file for update detection
+			priority INTEGER DEFAULT 0,      -- Lower = higher priority, first added = 0
+			imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(system_id, source_type)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_dat_sources_system_id ON dat_sources(system_id);
+
+		-- Link releases to their source DAT (optional for backward compat)
+		ALTER TABLE releases ADD COLUMN dat_source_id INTEGER REFERENCES dat_sources(id) ON DELETE SET NULL;
+
+		INSERT INTO schema_version (version) VALUES (7);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v7 migration: %w", err)
 	}
 
 	return nil

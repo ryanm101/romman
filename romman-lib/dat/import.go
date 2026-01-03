@@ -24,11 +24,14 @@ func NewImporter(db *sql.DB) *Importer {
 type ImportResult struct {
 	SystemID        int64
 	SystemName      string
+	SourceType      SourceType
 	GamesImported   int
 	RomsImported    int
 	GamesSkipped    int // Already existed
 	IsNewSystem     bool
-	ParentsResolved int // Number of parent_id references resolved
+	IsNewSource     bool
+	ParentsResolved int  // Number of parent_id references resolved
+	Skipped         bool // DAT was unchanged
 }
 
 // Import imports a DAT file into the database.
@@ -53,11 +56,22 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 		systemName = normalizeSystemName(dat.Header.Name)
 	}
 
+	// Detect source type
+	sourceType := DetectSourceType(dat.Header.Name)
+
+	// Hash the DAT file for update detection
+	datHash, err := HashFile(datPath)
+	if err != nil {
+		tracing.RecordError(span, err)
+		return nil, fmt.Errorf("failed to hash DAT file: %w", err)
+	}
+
 	span.SetAttributes(
 		attribute.String("system.name", systemName),
 		attribute.String("dat.name", dat.Header.Name),
 		attribute.String("dat.version", dat.Header.Version),
 		attribute.String("dat.date", dat.Header.Date),
+		attribute.String("dat.source_type", string(sourceType)),
 	)
 
 	// Start transaction
@@ -69,21 +83,44 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 	defer func() { _ = tx.Rollback() }()
 
 	// Get or create system
-	systemID, isNew, err := imp.getOrCreateSystem(ctx, tx, systemName, dat)
+	systemID, isNewSystem, err := imp.getOrCreateSystem(ctx, tx, systemName, dat)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to get/create system: %w", err)
 	}
 
+	// Get or create DAT source entry
+	datSource, isNewSource, err := GetOrCreateDATSource(tx, systemID, sourceType, dat, datPath, datHash)
+	if err != nil {
+		tracing.RecordError(span, err)
+		return nil, fmt.Errorf("failed to get/create dat_source: %w", err)
+	}
+
+	// Check if DAT is unchanged (only if source existed)
+	if !isNewSource && datSource.DATFileHash == datHash {
+		// DAT unchanged, skip import
+		_ = tx.Commit()
+		return &ImportResult{
+			SystemID:    systemID,
+			SystemName:  systemName,
+			SourceType:  sourceType,
+			IsNewSystem: false,
+			IsNewSource: false,
+			Skipped:     true,
+		}, nil
+	}
+
 	result := &ImportResult{
 		SystemID:    systemID,
 		SystemName:  systemName,
-		IsNewSystem: isNew,
+		SourceType:  sourceType,
+		IsNewSystem: isNewSystem,
+		IsNewSource: isNewSource,
 	}
 
 	// Import each game
 	for _, game := range dat.Games {
-		imported, err := imp.importGame(ctx, tx, systemID, game)
+		imported, err := imp.importGame(ctx, tx, systemID, datSource.ID, game)
 		if err != nil {
 			tracing.RecordError(span, err)
 			return nil, fmt.Errorf("failed to import game %q: %w", game.Name, err)
@@ -165,7 +202,7 @@ func (imp *Importer) getOrCreateSystem(ctx context.Context, tx *sql.Tx, name str
 	return id, true, nil
 }
 
-func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64, game Game) (bool, error) {
+func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID, datSourceID int64, game Game) (bool, error) {
 	_, span := tracing.StartSpan(ctx, "game: "+game.Name,
 		tracing.WithAttributes(
 			attribute.String("game.name", game.Name),
@@ -183,7 +220,7 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64,
 
 	if err == nil {
 		// Release exists, update metadata (idempotent but refresh)
-		if _, err := tx.Exec("UPDATE releases SET description = ?, clone_of = ? WHERE id = ?", game.Description, game.CloneOf, existingID); err != nil {
+		if _, err := tx.Exec("UPDATE releases SET description = ?, clone_of = ?, dat_source_id = ? WHERE id = ?", game.Description, game.CloneOf, datSourceID, existingID); err != nil {
 			return false, fmt.Errorf("failed to update release: %w", err)
 		}
 		return false, nil
@@ -192,10 +229,10 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64,
 		return false, fmt.Errorf("failed to check existing release: %w", err)
 	}
 
-	// Insert the release
+	// Insert the release with dat_source_id
 	result, err := tx.Exec(
-		"INSERT INTO releases (system_id, name, description, clone_of) VALUES (?, ?, ?, ?)",
-		systemID, game.Name, game.Description, game.CloneOf,
+		"INSERT INTO releases (system_id, name, description, clone_of, dat_source_id) VALUES (?, ?, ?, ?, ?)",
+		systemID, game.Name, game.Description, game.CloneOf, datSourceID,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to insert release: %w", err)
