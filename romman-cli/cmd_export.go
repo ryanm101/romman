@@ -11,6 +11,7 @@ func handleExportCommand(args []string) {
 	if len(args) < 3 {
 		fmt.Println("Usage: romman export <library> <report> <format> [file]")
 		fmt.Println("       romman export <library> retroarch <output.lpl>")
+		fmt.Println("       romman export <library> gamelist <output.xml> [--matched-only]")
 		os.Exit(1)
 	}
 
@@ -24,6 +25,28 @@ func handleExportCommand(args []string) {
 		}
 		outputPath := args[2]
 		exportRetroArch(libraryName, outputPath)
+		return
+	}
+
+	if reportOrFormat == "gamelist" {
+		if len(args) < 3 {
+			fmt.Println("Usage: romman export <library> gamelist <output.xml> [--matched-only]")
+			os.Exit(1)
+		}
+		outputPath := args[2]
+		matchedOnly := len(args) > 3 && args[3] == "--matched-only"
+		exportGamelist(libraryName, outputPath, matchedOnly)
+		return
+	}
+
+	if reportOrFormat == "launchbox" {
+		if len(args) < 3 {
+			fmt.Println("Usage: romman export <library> launchbox <output.xml> [--matched-only]")
+			os.Exit(1)
+		}
+		outputPath := args[2]
+		matchedOnly := len(args) > 3 && args[3] == "--matched-only"
+		exportLaunchBox(libraryName, outputPath, matchedOnly)
 		return
 	}
 
@@ -128,5 +151,87 @@ func exportRetroArch(libraryName, outputPath string) {
 		})
 	} else {
 		fmt.Printf("Exported RetroArch playlist to %s\n", outputPath)
+	}
+}
+
+func exportGamelist(libraryName, outputPath string, matchedOnly bool) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	exporter := library.NewExporter(database.Conn(), manager)
+
+	opts := library.GamelistOptions{
+		MatchedOnly: matchedOnly,
+		PathPrefix:  "./",
+	}
+
+	data, err := exporter.ExportGamelist(libraryName, opts)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error exporting gamelist: %v\n", err)
+		os.Exit(1)
+	}
+
+	// #nosec G306
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(map[string]interface{}{
+			"library":     libraryName,
+			"format":      "gamelist",
+			"output":      outputPath,
+			"matchedOnly": matchedOnly,
+			"status":      "success",
+		})
+	} else {
+		fmt.Printf("Exported EmulationStation gamelist.xml to %s\n", outputPath)
+	}
+}
+
+func exportLaunchBox(libraryName, outputPath string, matchedOnly bool) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	manager := library.NewManager(database.Conn())
+	exporter := library.NewExporter(database.Conn(), manager)
+
+	opts := library.LaunchBoxOptions{
+		MatchedOnly: matchedOnly,
+		PathPrefix:  ".\\",
+	}
+
+	data, err := exporter.ExportLaunchBox(libraryName, opts)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error exporting LaunchBox: %v\n", err)
+		os.Exit(1)
+	}
+
+	// #nosec G306
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+
+	if outputCfg.JSON {
+		PrintResult(map[string]interface{}{
+			"library":     libraryName,
+			"format":      "launchbox",
+			"output":      outputPath,
+			"matchedOnly": matchedOnly,
+			"status":      "success",
+		})
+	} else {
+		fmt.Printf("Exported LaunchBox platform XML to %s\n", outputPath)
 	}
 }
