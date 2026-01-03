@@ -101,14 +101,14 @@ func TestImporter_Idempotent(t *testing.T) {
 	result1, err := importer.Import(context.Background(), datPath)
 	require.NoError(t, err)
 	assert.True(t, result1.IsNewSystem)
+	assert.True(t, result1.IsNewSource)
 	assert.Equal(t, 1, result1.GamesImported)
+	assert.False(t, result1.Skipped)
 
-	// Second import - should be idempotent
+	// Second import - DAT unchanged, should be skipped
 	result2, err := importer.Import(context.Background(), datPath)
 	require.NoError(t, err)
-	assert.False(t, result2.IsNewSystem)
-	assert.Equal(t, 0, result2.GamesImported)
-	assert.Equal(t, 1, result2.GamesSkipped)
+	assert.True(t, result2.Skipped, "second import should skip (DAT unchanged)")
 
 	// Verify only one system and one release exist
 	var systemCount int

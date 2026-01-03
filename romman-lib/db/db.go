@@ -116,6 +116,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 9 {
+		if err := db.migrateV9(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -366,6 +371,26 @@ func (db *DB) migrateV8() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v8 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV9 adds performance indexes.
+func (db *DB) migrateV9() error {
+	schema := `
+		-- Performance indexes for common query patterns
+		CREATE INDEX IF NOT EXISTS idx_releases_system_name ON releases(system_id, name);
+		CREATE INDEX IF NOT EXISTS idx_scanned_files_path ON scanned_files(path);
+		CREATE INDEX IF NOT EXISTS idx_dat_sources_hash ON dat_sources(dat_file_hash);
+		CREATE INDEX IF NOT EXISTS idx_rom_entries_sha1_crc ON rom_entries(sha1, crc32);
+		CREATE INDEX IF NOT EXISTS idx_matches_type ON matches(match_type);
+
+		INSERT INTO schema_version (version) VALUES (9);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v9 migration: %w", err)
 	}
 
 	return nil
