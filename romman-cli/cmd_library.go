@@ -93,6 +93,12 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			os.Exit(1)
 		}
 		linkLibrary(args[1])
+	case "organize":
+		if len(args) < 3 {
+			fmt.Println("Usage: romman library organize <name> <output-dir> [--dry-run] [--preferred] [--rename] [--structure=system]")
+			os.Exit(1)
+		}
+		organizeLibrary(args[1], args[2], args[3:])
 	default:
 		fmt.Printf("Unknown library command: %s\n", args[0])
 		os.Exit(1)
@@ -757,4 +763,83 @@ func linkLibrary(name string) {
 	}
 
 	fmt.Printf("✓ Linked %d clones.\n", updated)
+}
+
+func organizeLibrary(libraryName, outputDir string, flags []string) {
+	database, err := openDB()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Parse flags
+	opts := library.OrganizeOptions{
+		OutputDir: outputDir,
+		Structure: "flat",
+	}
+	dryRun := false
+
+	for _, flag := range flags {
+		switch {
+		case flag == "--dry-run":
+			dryRun = true
+		case flag == "--preferred":
+			opts.PreferredOnly = true
+		case flag == "--rename":
+			opts.RenameToDAT = true
+		case strings.HasPrefix(flag, "--structure="):
+			opts.Structure = strings.TrimPrefix(flag, "--structure=")
+		}
+	}
+
+	manager := library.NewManager(database.Conn())
+	organizer := library.NewOrganizer(database.Conn(), manager)
+
+	mode := "LIVE"
+	if dryRun {
+		mode = "DRY-RUN"
+	}
+	fmt.Printf("Organizing library: %s [%s]\n", libraryName, mode)
+	fmt.Printf("  Output: %s\n", outputDir)
+	fmt.Printf("  Structure: %s\n", opts.Structure)
+	if opts.RenameToDAT {
+		fmt.Println("  Renaming to DAT names: yes")
+	}
+	if opts.PreferredOnly {
+		fmt.Println("  Preferred releases only: yes")
+	}
+	fmt.Println()
+
+	// Generate plan
+	result, err := organizer.Plan(libraryName, opts)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(result.Actions) == 0 {
+		fmt.Println("Nothing to organize.")
+		return
+	}
+
+	// Show preview
+	for _, action := range result.Actions {
+		fmt.Printf("  %s\n", action.SourcePath)
+		fmt.Printf("    -> %s\n", action.DestPath)
+	}
+
+	fmt.Printf("\n%d files to organize\n", len(result.Actions))
+
+	if !dryRun {
+		// Execute the plan
+		if err := organizer.Execute(result, false); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\nMoved: %d, Errors: %d\n", result.Moved, result.Errors)
+		for _, msg := range result.ErrorMsgs {
+			fmt.Printf("  Error: %s\n", msg)
+		}
+	}
 }
