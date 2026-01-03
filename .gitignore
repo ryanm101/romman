@@ -1,7 +1,13 @@
 .idea/
 *.db
+*.db-*
 bin/
 coverage.out
 coverage.html
 *.json
+!package.json
+!package-lock.json
 *.dat
+node_modules
+playwright-report
+e2e/test-results

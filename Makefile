@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean
+.PHONY: all build test lint clean test-e2e
 
 all: build-all
 
@@ -25,6 +25,12 @@ test-short:
 	$(MAKE) -C romman-tui test-short
 	$(MAKE) -C romman-web test-short
 
+# E2E Tests (Playwright - requires running server)
+test-e2e:
+	$(MAKE) -C romman-web test-e2e
+
+test-e2e-install:
+	$(MAKE) -C romman-web test-e2e-install
 
 test-cover:
 	$(MAKE) -C romman-lib test-cover
@@ -47,5 +53,3 @@ clean:
 
 # Convenience
 dev: test-short build-all
-
-
