@@ -494,10 +494,96 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #484f58;
         }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 400px;
+        }
+
+        .toast {
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+            cursor: pointer;
+        }
+
+        .toast.error {
+            background: linear-gradient(135deg, #5c2327, #3d1518);
+            border: 1px solid var(--error);
+            color: #f8d7da;
+        }
+
+        .toast.success {
+            background: linear-gradient(135deg, #1a3d25, #0d2618);
+            border: 1px solid var(--success);
+            color: #d4edda;
+        }
+
+        .toast.warning {
+            background: linear-gradient(135deg, #4d3a00, #332600);
+            border: 1px solid var(--warning);
+            color: #fff3cd;
+        }
+
+        .toast-icon {
+            font-size: 1.2rem;
+        }
+
+        .toast-message {
+            flex: 1;
+            font-size: 0.9rem;
+        }
+
+        .toast-close {
+            opacity: 0.7;
+            cursor: pointer;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
     <div class="container">
         <header>
             <div class="logo">
@@ -687,12 +773,41 @@
                 const options = { method };
                 if (body) options.body = JSON.stringify(body);
                 const res = await fetch(path, options);
-                if (!res.ok) throw new Error(await res.text());
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(errorText || `HTTP ${res.status}`);
+                }
                 return await res.json();
             } catch (e) {
                 console.error('API Error:', e);
-                return null;
+                // Return error object so callers can check
+                return { _error: true, message: e.message };
             }
+        }
+
+        // Toast notification system
+        function showToast(message, type = 'error', duration = 5000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+
+            const icons = { error: '❌', success: '✅', warning: '⚠️' };
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || '📢'}</span>
+                <span class="toast-message">${message}</span>
+                <span class="toast-close" onclick="this.parentElement.remove()">✕</span>
+            `;
+
+            container.appendChild(toast);
+
+            // Auto-remove after duration
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+
+            // Click to dismiss
+            toast.addEventListener('click', () => toast.remove());
         }
 
         async function init() {
@@ -757,8 +872,21 @@
             btn.disabled = true;
 
             const res = await api('/api/scan?library=' + encodeURIComponent(name), 'POST');
-            if (res) {
+            if (res && res._error) {
+                // Show error toast
+                let errorMsg = res.message || 'Unknown error';
+                // Clean up common error messages
+                if (errorMsg.includes('no such file or directory')) {
+                    errorMsg = `Scan failed: Library path not found. Check if the directory exists.`;
+                } else if (errorMsg.includes('permission denied')) {
+                    errorMsg = `Scan failed: Permission denied accessing library path.`;
+                }
+                showToast(errorMsg, 'error');
+            } else if (res) {
+                showToast(`Scan complete for ${name}`, 'success', 3000);
                 await init();
+            } else {
+                showToast(`Scan failed for ${name}`, 'error');
             }
             btn.textContent = originalText;
             btn.disabled = false;

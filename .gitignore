@@ -11,3 +11,4 @@ coverage.html
 node_modules
 playwright-report
 e2e/test-results
+.romman.yaml
