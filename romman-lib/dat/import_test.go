@@ -2,6 +2,7 @@ package dat
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,4 +118,57 @@ func TestImporter_Idempotent(t *testing.T) {
 	var releaseCount int
 	_ = database.Conn().QueryRow("SELECT COUNT(*) FROM releases").Scan(&releaseCount)
 	assert.Equal(t, 1, releaseCount)
+}
+
+func TestImporter_Clones(t *testing.T) {
+	datContent := `<?xml version="1.0"?>
+<datafile>
+	<header><name>Clones</name></header>
+	<game name="Parent Game">
+		<description>Parent Game</description>
+	</game>
+	<game name="Clone Game" cloneof="Parent Game" romof="Parent Game">
+		<description>Clone Game</description>
+	</game>
+</datafile>`
+
+	tmpDir := t.TempDir()
+	datPath := filepath.Join(tmpDir, "clones.dat")
+	err := os.WriteFile(datPath, []byte(datContent), 0644) // #nosec G306
+	require.NoError(t, err)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	database, err := db.Open(dbPath)
+	require.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	importer := NewImporter(database.Conn())
+	_, err = importer.Import(context.Background(), datPath)
+	require.NoError(t, err)
+
+	// Verify clone_of column
+	var parentCloneOf, cloneCloneOf sql.NullString
+	err = database.Conn().QueryRow("SELECT clone_of FROM releases WHERE name = 'Parent Game'").Scan(&parentCloneOf)
+	require.NoError(t, err)
+	assert.True(t, !parentCloneOf.Valid || parentCloneOf.String == "", "Parent should have empty/null clone_of")
+
+	err = database.Conn().QueryRow("SELECT clone_of FROM releases WHERE name = 'Clone Game'").Scan(&cloneCloneOf)
+	require.NoError(t, err)
+	assert.Equal(t, "Parent Game", cloneCloneOf.String)
+
+	// Verify parent_id is resolved correctly
+	var parentParentID, cloneParentID sql.NullInt64
+	err = database.Conn().QueryRow("SELECT parent_id FROM releases WHERE name = 'Parent Game'").Scan(&parentParentID)
+	require.NoError(t, err)
+	assert.False(t, parentParentID.Valid, "Parent should have NULL parent_id")
+
+	err = database.Conn().QueryRow("SELECT parent_id FROM releases WHERE name = 'Clone Game'").Scan(&cloneParentID)
+	require.NoError(t, err)
+	assert.True(t, cloneParentID.Valid, "Clone should have parent_id set")
+
+	// Verify parent_id points to the correct parent
+	var parentName string
+	err = database.Conn().QueryRow("SELECT name FROM releases WHERE id = ?", cloneParentID.Int64).Scan(&parentName)
+	require.NoError(t, err)
+	assert.Equal(t, "Parent Game", parentName, "Clone's parent_id should point to Parent Game")
 }

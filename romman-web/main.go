@@ -87,7 +87,9 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/libraries", s.handleLibraries)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
+	s.mux.HandleFunc("/api/scan-all", s.handleScanAll)
 	s.mux.HandleFunc("/api/details", s.handleDetails)
+	s.mux.HandleFunc("/api/counts", s.handleCounts)
 	s.mux.HandleFunc("/api/media/", s.handleMedia) // Note trailing slash for prefix matching
 	s.mux.HandleFunc("/api/packs/games", s.handlePackGames)
 	s.mux.HandleFunc("/api/packs/generate", s.handlePackGenerate)
@@ -146,17 +148,13 @@ func (s *Server) handleSystems(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleLibraries(w http.ResponseWriter, _ *http.Request) {
+	// Get library info
 	rows, err := s.db.Query(`
-		SELECT l.name, s.name as system,
-			COUNT(DISTINCT CASE WHEN m.id IS NOT NULL THEN re.release_id END) as matched,
-			COUNT(DISTINCT r.id) as total
+		SELECT l.id, l.name, s.name as system,
+			(SELECT COUNT(*) FROM releases WHERE system_id = l.system_id) as total
 		FROM libraries l
 		JOIN systems s ON s.id = l.system_id
-		LEFT JOIN releases r ON r.system_id = l.system_id
-		LEFT JOIN rom_entries re ON re.release_id = r.id
-		LEFT JOIN matches m ON m.rom_entry_id = re.id
-			AND m.scanned_file_id IN (SELECT id FROM scanned_files WHERE library_id = l.id)
-		GROUP BY l.id ORDER BY l.name
+		ORDER BY l.name
 	`)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -164,22 +162,44 @@ func (s *Server) handleLibraries(w http.ResponseWriter, _ *http.Request) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var libs []map[string]interface{}
+	type libInfo struct {
+		id      int64
+		name    string
+		system  string
+		matched int
+		total   int
+	}
+	var libList []libInfo
 	for rows.Next() {
-		var name, system string
-		var matched, total int
-		if err := rows.Scan(&name, &system, &matched, &total); err != nil {
+		var l libInfo
+		if err := rows.Scan(&l.id, &l.name, &l.system, &l.total); err != nil {
 			continue
 		}
+		libList = append(libList, l)
+	}
+
+	// Get matched counts per library (separate query is faster)
+	for i := range libList {
+		_ = s.db.QueryRow(`
+			SELECT COUNT(DISTINCT re.release_id)
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
+			WHERE sf.library_id = ?
+		`, libList[i].id).Scan(&libList[i].matched)
+	}
+
+	var libs []map[string]interface{}
+	for _, l := range libList {
 		pct := 0
-		if total > 0 {
-			pct = matched * 100 / total
+		if l.total > 0 {
+			pct = l.matched * 100 / l.total
 		}
 		libs = append(libs, map[string]interface{}{
-			"name":     name,
-			"system":   system,
-			"matched":  matched,
-			"total":    total,
+			"name":     l.name,
+			"system":   l.system,
+			"matched":  l.matched,
+			"total":    l.total,
 			"matchPct": pct,
 		})
 	}
@@ -208,6 +228,132 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleScanAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	system := r.URL.Query().Get("system")
+	if system == "" {
+		http.Error(w, "Missing system parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Get all libraries for this system
+	rows, err := s.db.Query(`
+		SELECT l.name FROM libraries l
+		JOIN systems s ON s.id = l.system_id
+		WHERE s.name = ?
+	`, system)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	var libNames []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			libNames = append(libNames, name)
+		}
+	}
+
+	if len(libNames) == 0 {
+		http.Error(w, "No libraries found for system", http.StatusNotFound)
+		return
+	}
+
+	scanner := library.NewScanner(s.db)
+	var scanned int
+	for _, name := range libNames {
+		if _, err := scanner.Scan(r.Context(), name); err == nil {
+			scanned++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"scanned": scanned,
+		"total":   len(libNames),
+	})
+}
+
+func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
+	libName := r.URL.Query().Get("library")
+	if libName == "" {
+		http.Error(w, "Missing library parameter", http.StatusBadRequest)
+		return
+	}
+
+	var matched, missing, flagged, unmatched, preferred int
+
+	// Matched count
+	_ = s.db.QueryRow(`
+		SELECT COUNT(DISTINCT r.id)
+		FROM scanned_files sf
+		JOIN matches m ON m.scanned_file_id = sf.id
+		JOIN rom_entries re ON re.id = m.rom_entry_id
+		JOIN releases r ON r.id = re.release_id
+		JOIN libraries l ON l.id = sf.library_id
+		WHERE l.name = ? AND m.match_type IN ('sha1', 'crc32')
+	`, libName).Scan(&matched)
+
+	// Missing count
+	_ = s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM releases r
+		JOIN libraries l ON l.system_id = r.system_id
+		WHERE l.name = ?
+		AND r.id NOT IN (
+			SELECT DISTINCT re.release_id
+			FROM scanned_files sf
+			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
+			WHERE sf.library_id = l.id
+		)
+	`, libName).Scan(&missing)
+
+	// Flagged count
+	_ = s.db.QueryRow(`
+		SELECT COUNT(DISTINCT r.id)
+		FROM scanned_files sf
+		JOIN matches m ON m.scanned_file_id = sf.id
+		JOIN rom_entries re ON re.id = m.rom_entry_id
+		JOIN releases r ON r.id = re.release_id
+		JOIN libraries l ON l.id = sf.library_id
+		WHERE l.name = ? AND m.flags IS NOT NULL AND m.flags != ''
+	`, libName).Scan(&flagged)
+
+	// Unmatched count
+	_ = s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM scanned_files sf
+		JOIN libraries l ON l.id = sf.library_id
+		LEFT JOIN matches m ON m.scanned_file_id = sf.id
+		WHERE l.name = ? AND m.id IS NULL
+	`, libName).Scan(&unmatched)
+
+	// Preferred count
+	_ = s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM releases r
+		JOIN libraries l ON l.system_id = r.system_id
+		WHERE l.name = ? AND r.is_preferred = 1
+	`, libName).Scan(&preferred)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int{
+		"matched":   matched,
+		"missing":   missing,
+		"flagged":   flagged,
+		"unmatched": unmatched,
+		"preferred": preferred,
+	})
 }
 
 func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
@@ -341,9 +487,10 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 				items = append(items, map[string]string{"name": name, "path": path, "matchType": matchType, "status": status})
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
 }
 
 func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {

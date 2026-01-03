@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ryanm101/romman-lib/db"
 	"github.com/ryanm101/romman-lib/metadata"
 )
 
@@ -36,22 +37,11 @@ func handleScrapeCommand(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	clientID := os.Getenv("IGDB_CLIENT_ID")
-	clientSecret := os.Getenv("IGDB_CLIENT_SECRET")
-	if clientID == "" || clientSecret == "" {
-		PrintError("Error: IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables required\n")
-		os.Exit(1)
-	}
-
-	provider, err := metadata.NewIGDBProvider(clientID, clientSecret)
+	service, err := setupMetadataService(db)
 	if err != nil {
-		PrintError("Error: failed to init IGDB provider: %v\n", err)
+		PrintError("Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	homeDir, _ := os.UserHomeDir()
-	mediaRoot := filepath.Join(homeDir, ".romman", "media")
-	service := metadata.NewService(db, provider, mediaRoot)
 
 	fmt.Printf("Scraping metadata for '%s' (ID: %d)...\n", name, id)
 	start := time.Now()
@@ -61,4 +51,21 @@ func handleScrapeCommand(ctx context.Context, args []string) {
 	}
 
 	fmt.Printf("✓ Scraped successfully in %s\n", time.Since(start))
+}
+
+func setupMetadataService(db *db.DB) (*metadata.Service, error) {
+	clientID := os.Getenv("IGDB_CLIENT_ID")
+	clientSecret := os.Getenv("IGDB_CLIENT_SECRET")
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables required")
+	}
+
+	provider, err := metadata.NewIGDBProvider(clientID, clientSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init IGDB provider: %w", err)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	mediaRoot := filepath.Join(homeDir, ".romman", "media")
+	return metadata.NewService(db, provider, mediaRoot), nil
 }

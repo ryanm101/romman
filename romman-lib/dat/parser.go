@@ -30,7 +30,9 @@ type Rom struct {
 // Game represents a game entry in the DAT file.
 type Game struct {
 	Name        string `xml:"name,attr"`
-	CloneOf     string `xml:"cloneof,attr"`
+	ID          string `xml:"id,attr"`        // Some DATs use numeric IDs
+	CloneOf     string `xml:"cloneof,attr"`   // Standard: references parent by name
+	CloneOfID   string `xml:"cloneofid,attr"` // Variant: references parent by ID
 	RomOf       string `xml:"romof,attr"`
 	Description string `xml:"description"`
 	Roms        []Rom  `xml:"rom"`
@@ -89,5 +91,29 @@ func Parse(r io.Reader) (*DATFile, error) {
 		}
 	}
 
+	// Post-process: resolve CloneOfID to CloneOf (name) if needed
+	resolveCloneOfIDs(dat)
+
 	return dat, nil
+}
+
+// resolveCloneOfIDs converts cloneofid references to cloneof (name-based) references.
+// Some DAT files use numeric IDs instead of game names for parent/clone relationships.
+func resolveCloneOfIDs(dat *DATFile) {
+	// Build ID -> Name mapping
+	idToName := make(map[string]string)
+	for _, game := range dat.Games {
+		if game.ID != "" {
+			idToName[game.ID] = game.Name
+		}
+	}
+
+	// Resolve CloneOfID to CloneOf
+	for i := range dat.Games {
+		if dat.Games[i].CloneOfID != "" && dat.Games[i].CloneOf == "" {
+			if parentName, ok := idToName[dat.Games[i].CloneOfID]; ok {
+				dat.Games[i].CloneOf = parentName
+			}
+		}
+	}
 }

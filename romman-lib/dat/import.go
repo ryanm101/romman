@@ -22,12 +22,13 @@ func NewImporter(db *sql.DB) *Importer {
 
 // ImportResult contains statistics from a DAT import operation.
 type ImportResult struct {
-	SystemID      int64
-	SystemName    string
-	GamesImported int
-	RomsImported  int
-	GamesSkipped  int // Already existed
-	IsNewSystem   bool
+	SystemID        int64
+	SystemName      string
+	GamesImported   int
+	RomsImported    int
+	GamesSkipped    int // Already existed
+	IsNewSystem     bool
+	ParentsResolved int // Number of parent_id references resolved
 }
 
 // Import imports a DAT file into the database.
@@ -96,6 +97,14 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 		}
 	}
 
+	// Resolve parent_id from clone_of text references
+	parentsResolved, err := imp.resolveParentIDs(tx, systemID)
+	if err != nil {
+		tracing.RecordError(span, err)
+		return nil, fmt.Errorf("failed to resolve parent IDs: %w", err)
+	}
+	result.ParentsResolved = parentsResolved
+
 	if err := tx.Commit(); err != nil {
 		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
@@ -106,6 +115,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 		attribute.Int("result.games_imported", result.GamesImported),
 		attribute.Int("result.games_skipped", result.GamesSkipped),
 		attribute.Int("result.roms_imported", result.RomsImported),
+		attribute.Int("result.parents_resolved", result.ParentsResolved),
 	)
 	tracing.SetSpanOK(span)
 
@@ -172,7 +182,10 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64,
 	).Scan(&existingID)
 
 	if err == nil {
-		// Release exists, skip (idempotent)
+		// Release exists, update metadata (idempotent but refresh)
+		if _, err := tx.Exec("UPDATE releases SET description = ?, clone_of = ? WHERE id = ?", game.Description, game.CloneOf, existingID); err != nil {
+			return false, fmt.Errorf("failed to update release: %w", err)
+		}
 		return false, nil
 	}
 	if err != sql.ErrNoRows {
@@ -181,8 +194,8 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID int64,
 
 	// Insert the release
 	result, err := tx.Exec(
-		"INSERT INTO releases (system_id, name, description) VALUES (?, ?, ?)",
-		systemID, game.Name, game.Description,
+		"INSERT INTO releases (system_id, name, description, clone_of) VALUES (?, ?, ?, ?)",
+		systemID, game.Name, game.Description, game.CloneOf,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to insert release: %w", err)
@@ -215,4 +228,24 @@ func normalizeSystemName(name string) string {
 		return "unknown"
 	}
 	return filepath.Base(name)
+}
+
+// resolveParentIDs updates parent_id by resolving clone_of text references to actual release IDs.
+// This needs to be called after all games in a system are imported to ensure parents exist.
+func (imp *Importer) resolveParentIDs(tx *sql.Tx, systemID int64) (int, error) {
+	result, err := tx.Exec(`
+		UPDATE releases 
+		SET parent_id = (
+			SELECT p.id FROM releases p 
+			WHERE p.system_id = releases.system_id 
+			AND p.name = releases.clone_of
+		)
+		WHERE system_id = ? AND clone_of IS NOT NULL AND clone_of != ''
+	`, systemID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve parent IDs: %w", err)
+	}
+
+	affected, _ := result.RowsAffected()
+	return int(affected), nil
 }

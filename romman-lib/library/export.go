@@ -221,8 +221,9 @@ func (e *Exporter) getUnmatched(libraryID int64) ([]ExportRecord, error) {
 // get1G1R returns matched preferred releases - one per game (1 Game, 1 ROM).
 func (e *Exporter) get1G1R(libraryID, systemID int64) ([]ExportRecord, error) {
 	// Get preferred releases that are matched in this library
+	// We include parent_id to group clones
 	rows, err := e.db.Query(`
-		SELECT DISTINCT r.name, sf.path, sf.sha1, m.match_type
+		SELECT DISTINCT r.id, r.parent_id, r.name, sf.path, sf.sha1, m.match_type
 		FROM releases r
 		JOIN rom_entries re ON re.release_id = r.id
 		JOIN matches m ON m.rom_entry_id = re.id
@@ -237,15 +238,52 @@ func (e *Exporter) get1G1R(libraryID, systemID int64) ([]ExportRecord, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var records []ExportRecord
+	type extendedRecord struct {
+		ExportRecord
+		id       int64
+		parentID sql.NullInt64
+	}
+
+	// Group by ParentID (or ID if no parent)
+	groups := make(map[int64][]extendedRecord)
+
 	for rows.Next() {
-		var rec ExportRecord
-		if err := rows.Scan(&rec.Name, &rec.Path, &rec.Hash, &rec.MatchType); err != nil {
+		var rec extendedRecord
+		if err := rows.Scan(&rec.id, &rec.parentID, &rec.Name, &rec.Path, &rec.Hash, &rec.MatchType); err != nil {
 			return nil, err
 		}
 		rec.Status = "1g1r"
-		records = append(records, rec)
+
+		groupID := rec.id
+		if rec.parentID.Valid {
+			groupID = rec.parentID.Int64
+		}
+		groups[groupID] = append(groups[groupID], rec)
 	}
+
+	var records []ExportRecord
+
+	// Process groups to pick the best one
+	for _, group := range groups {
+		// Selection strategy:
+		// 1. Prefer the parent release (has no parent_id set) if it's in our matched set
+		// 2. Otherwise fall back to the first alphabetically (deterministic)
+		//
+		// The 'is_preferred=1' filter already selected our preferred regions.
+		// This handles tie-breaking when multiple variants are both preferred and matched.
+
+		best := group[0]
+		for _, rec := range group {
+			if !rec.parentID.Valid {
+				// This is the parent release - prefer it
+				best = rec
+				break
+			}
+		}
+
+		records = append(records, best.ExportRecord)
+	}
+
 	return records, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ryanm101/romman-lib/dat"
 	"github.com/ryanm101/romman-lib/library"
@@ -76,6 +77,22 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			os.Exit(1)
 		}
 		verifyLibrary(args[1])
+	case "scrape":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman library scrape <name> [--force]")
+			os.Exit(1)
+		}
+		force := false
+		if len(args) >= 3 && args[2] == "--force" {
+			force = true
+		}
+		scrapeLibrary(ctx, args[1], force)
+	case "link":
+		if len(args) < 2 {
+			fmt.Println("Usage: romman library link <name>")
+			os.Exit(1)
+		}
+		linkLibrary(args[1])
 	default:
 		fmt.Printf("Unknown library command: %s\n", args[0])
 		os.Exit(1)
@@ -602,4 +619,142 @@ func verifyLibrary(libraryName string) {
 	if len(result.Issues) == 0 {
 		fmt.Println("\n✓ All files verified OK")
 	}
+}
+
+func scrapeLibrary(ctx context.Context, name string, force bool) {
+	db, err := openDB()
+	if err != nil {
+		PrintError("Error: failed to open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = db.Close() }()
+
+	service, err := setupMetadataService(db)
+	if err != nil {
+		PrintError("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Fetching game list for library '%s'...\n", name)
+
+	query := `
+		SELECT DISTINCT r.id, r.name 
+		FROM releases r
+		JOIN rom_entries re ON re.release_id = r.id
+		JOIN matches m ON m.rom_entry_id = re.id
+		JOIN scanned_files sf ON sf.id = m.scanned_file_id
+		JOIN libraries l ON l.id = sf.library_id
+		WHERE l.name = ?
+	`
+	if !force {
+		// Optimization: Skip valid metadata
+		// But "valid" implies we have it.
+		// If migration V5 isn't applied, this table won't exist? (OpenDB runs migrations)
+		query += ` AND NOT EXISTS (SELECT 1 FROM game_metadata gm WHERE gm.release_id = r.id)`
+	}
+
+	rows, err := db.Conn().QueryContext(ctx, query, name)
+	if err != nil {
+		PrintError("Error: failed to query games: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type gameToScrape struct {
+		id   int64
+		name string
+	}
+	var games []gameToScrape
+	for rows.Next() {
+		var g gameToScrape
+		if err := rows.Scan(&g.id, &g.name); err != nil {
+			PrintError("Error: scan failed: %v\n", err)
+			continue
+		}
+		games = append(games, g)
+	}
+
+	if len(games) == 0 {
+		fmt.Println("No games to scrape (use --force to re-scrape existing).")
+		return
+	}
+
+	fmt.Printf("Scraping metadata for %d games...\n", len(games))
+
+	var bar *progressbar.ProgressBar
+	if !outputCfg.Quiet && !outputCfg.JSON {
+		bar = progressbar.Default(int64(len(games)), "Scraping")
+	}
+
+	success := 0
+	errors := 0
+	start := time.Now()
+
+	for _, g := range games {
+		if bar != nil {
+			bar.Describe(truncateString(g.name, 30))
+		}
+
+		err := service.ScrapeGame(ctx, g.id, g.name)
+		if err != nil {
+			// Log error but continue
+			// TODO: Log to file?
+			errors++
+		} else {
+			success++
+		}
+
+		if bar != nil {
+			_ = bar.Add(1)
+		}
+
+		// Basic rate limit avoidance
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if bar != nil {
+		_ = bar.Finish()
+	}
+	fmt.Println()
+	fmt.Printf("Done: %d scraped, %d errors in %s.\n", success, errors, time.Since(start))
+}
+
+func truncateString(s string, max int) string {
+	if len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
+}
+
+func linkLibrary(name string) {
+	database, err := openDB()
+	if err != nil {
+		PrintError("Error: failed to open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = database.Close() }()
+
+	var systemID int64
+	var sysName string
+	err = database.Conn().QueryRow(`
+		SELECT s.id, s.name 
+		FROM systems s 
+		JOIN libraries l ON l.system_id = s.id 
+		WHERE l.name = ?
+	`, name).Scan(&systemID, &sysName)
+
+	if err != nil {
+		PrintError("Error: failed to find library '%s': %v\n", name, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Linking clones for library '%s' (System: %s)...\n", name, sysName)
+
+	updated, err := dat.LinkClones(database.Conn(), systemID)
+	if err != nil {
+		PrintError("Error: failed to link clones: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Linked %d clones.\n", updated)
 }

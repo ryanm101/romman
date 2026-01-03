@@ -504,7 +504,10 @@
                 <span class="logo-icon">🎮</span>
                 <h1>ROM Manager</h1>
             </div>
-            <div id="connection-status" style="font-size:0.8rem; color:var(--success)">● Connected</div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 Refresh</button>
+                <div id="connection-status" style="font-size:0.8rem; color:var(--success)">● Connected</div>
+            </div>
         </header>
 
         <div class="stats">
@@ -582,11 +585,16 @@
             </div>
             <div class="modal-body">
                 <div class="tabs" id="modal-tabs">
-                    <div class="tab active" onclick="setFilter('matched')">Matched</div>
-                    <div class="tab" onclick="setFilter('missing')">Missing</div>
-                    <div class="tab" onclick="setFilter('flagged')">Flagged</div>
-                    <div class="tab" onclick="setFilter('unmatched')">Unmatched</div>
-                    <div class="tab" onclick="setFilter('preferred')">Preferred</div>
+                    <div class="tab active" id="tab-matched" onclick="setFilter('matched')">Matched (<span
+                            id="count-matched">0</span>)</div>
+                    <div class="tab" id="tab-missing" onclick="setFilter('missing')">Missing (<span
+                            id="count-missing">0</span>)</div>
+                    <div class="tab" id="tab-flagged" onclick="setFilter('flagged')">Flagged (<span
+                            id="count-flagged">0</span>)</div>
+                    <div class="tab" id="tab-unmatched" onclick="setFilter('unmatched')">Unmatched (<span
+                            id="count-unmatched">0</span>)</div>
+                    <div class="tab" id="tab-preferred" onclick="setFilter('preferred')">Preferred (<span
+                            id="count-preferred">0</span>)</div>
                 </div>
                 <div class="search-box">
                     <input type="text" id="game-search" class="search-input" placeholder="Search games..."
@@ -756,16 +764,40 @@
             btn.disabled = false;
         }
 
+        async function refreshData() {
+            document.getElementById('connection-status').textContent = '● Refreshing...';
+            document.getElementById('connection-status').style.color = 'var(--warning)';
+            await init();
+            document.getElementById('connection-status').textContent = '● Connected';
+            document.getElementById('connection-status').style.color = 'var(--success)';
+        }
+
         async function openLibrary(name) {
             state.currentLib = name;
             state.currentFilter = 'matched';
             state.searchQuery = '';
+            state.filterCounts = {};
             document.getElementById('game-search').value = '';
             document.getElementById('modal-title').textContent = 'Library: ' + name;
             document.getElementById('detail-view').style.display = 'flex';
 
+            // Fetch counts for all filters
+            await fetchCounts();
             updateTabUI();
             await fetchItems();
+        }
+
+        async function fetchCounts() {
+            const res = await api('/api/counts?library=' + encodeURIComponent(state.currentLib));
+            if (res) {
+                state.filterCounts = res;
+                // Update count badges
+                document.getElementById('count-matched').textContent = res.matched || 0;
+                document.getElementById('count-missing').textContent = res.missing || 0;
+                document.getElementById('count-flagged').textContent = res.flagged || 0;
+                document.getElementById('count-unmatched').textContent = res.unmatched || 0;
+                document.getElementById('count-preferred').textContent = res.preferred || 0;
+            }
         }
 
         function closeModal() {
@@ -779,10 +811,12 @@
         }
 
         function updateTabUI() {
-            const tabs = document.querySelectorAll('.tab');
+            const tabs = ['matched', 'missing', 'flagged', 'unmatched', 'preferred'];
             tabs.forEach(t => {
-                const label = t.textContent.toLowerCase();
-                t.classList.toggle('active', label === state.currentFilter);
+                const tab = document.getElementById('tab-' + t);
+                if (tab) {
+                    tab.classList.toggle('active', t === state.currentFilter);
+                }
             });
         }
 

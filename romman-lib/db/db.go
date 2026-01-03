@@ -101,6 +101,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 6 {
+		if err := db.migrateV6(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -280,6 +285,24 @@ func (db *DB) migrateV4() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v4 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV6 adds parent/clone support.
+func (db *DB) migrateV6() error {
+	schema := `
+		ALTER TABLE releases ADD COLUMN clone_of TEXT;
+		ALTER TABLE releases ADD COLUMN parent_id INTEGER REFERENCES releases(id) ON DELETE SET NULL;
+
+		CREATE INDEX IF NOT EXISTS idx_releases_parent_id ON releases(parent_id);
+
+		INSERT INTO schema_version (version) VALUES (6);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v6 migration: %w", err)
 	}
 
 	return nil

@@ -117,6 +117,8 @@ func initTestSchema(db *sql.DB) error {
 			name TEXT NOT NULL,
 			is_preferred INTEGER DEFAULT 0,
 			ignore_reason TEXT,
+			clone_of TEXT,
+			parent_id INTEGER REFERENCES releases(id),
 			FOREIGN KEY (system_id) REFERENCES systems(id)
 		);
 		CREATE TABLE IF NOT EXISTS rom_entries (
