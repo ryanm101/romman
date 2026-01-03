@@ -118,8 +118,14 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 		IsNewSource: isNewSource,
 	}
 
-	// Import each game
+	// Import each game (skip MAME BIOS and device entries)
 	for _, game := range dat.Games {
+		// Skip BIOS-only entries and device definitions
+		if game.IsBIOS == "yes" || game.IsDevice == "yes" {
+			result.GamesSkipped++
+			continue
+		}
+
 		imported, err := imp.importGame(ctx, tx, systemID, datSource.ID, game)
 		if err != nil {
 			tracing.RecordError(span, err)
@@ -220,7 +226,8 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID, datSo
 
 	if err == nil {
 		// Release exists, update metadata (idempotent but refresh)
-		if _, err := tx.Exec("UPDATE releases SET description = ?, clone_of = ?, dat_source_id = ? WHERE id = ?", game.Description, game.CloneOf, datSourceID, existingID); err != nil {
+		if _, err := tx.Exec(`UPDATE releases SET description = ?, clone_of = ?, dat_source_id = ?, year = ?, manufacturer = ? WHERE id = ?`,
+			game.Description, game.CloneOf, datSourceID, game.Year, game.Manufacturer, existingID); err != nil {
 			return false, fmt.Errorf("failed to update release: %w", err)
 		}
 		return false, nil
@@ -229,10 +236,10 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID, datSo
 		return false, fmt.Errorf("failed to check existing release: %w", err)
 	}
 
-	// Insert the release with dat_source_id
+	// Insert the release with dat_source_id and MAME metadata
 	result, err := tx.Exec(
-		"INSERT INTO releases (system_id, name, description, clone_of, dat_source_id) VALUES (?, ?, ?, ?, ?)",
-		systemID, game.Name, game.Description, game.CloneOf, datSourceID,
+		`INSERT INTO releases (system_id, name, description, clone_of, dat_source_id, year, manufacturer) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		systemID, game.Name, game.Description, game.CloneOf, datSourceID, game.Year, game.Manufacturer,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to insert release: %w", err)

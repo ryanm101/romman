@@ -27,15 +27,26 @@ type Rom struct {
 	SHA1  string `xml:"sha1,attr"`
 }
 
-// Game represents a game entry in the DAT file.
+// Game represents a game/machine entry in the DAT file.
+// Supports both Logiqx DAT format and MAME XML format.
 type Game struct {
-	Name        string `xml:"name,attr"`
-	ID          string `xml:"id,attr"`        // Some DATs use numeric IDs
-	CloneOf     string `xml:"cloneof,attr"`   // Standard: references parent by name
-	CloneOfID   string `xml:"cloneofid,attr"` // Variant: references parent by ID
-	RomOf       string `xml:"romof,attr"`
-	Description string `xml:"description"`
-	Roms        []Rom  `xml:"rom"`
+	Name         string `xml:"name,attr"`
+	ID           string `xml:"id,attr"`        // Some DATs use numeric IDs
+	CloneOf      string `xml:"cloneof,attr"`   // Standard: references parent by name
+	CloneOfID    string `xml:"cloneofid,attr"` // Variant: references parent by ID
+	RomOf        string `xml:"romof,attr"`     // MAME: parent set for shared ROMs
+	SampleOf     string `xml:"sampleof,attr"`  // MAME: parent set for shared samples
+	Description  string `xml:"description"`
+	Year         string `xml:"year"`         // MAME: release year
+	Manufacturer string `xml:"manufacturer"` // MAME: manufacturer name
+	Roms         []Rom  `xml:"rom"`
+
+	// MAME-specific attributes
+	IsBIOS     string `xml:"isbios,attr"`       // "yes" or "no"
+	IsDevice   string `xml:"isdevice,attr"`     // "yes" or "no"
+	IsMech     string `xml:"ismechanical,attr"` // "yes" or "no"
+	Runnable   string `xml:"runnable,attr"`     // "yes" or "no"
+	SourceFile string `xml:"sourcefile,attr"`   // Driver source file
 }
 
 // DATFile represents a parsed Logiqx DAT file.

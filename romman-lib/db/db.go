@@ -111,6 +111,11 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	if version < 8 {
+		if err := db.migrateV8(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -341,6 +346,26 @@ func (db *DB) migrateV7() error {
 
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("failed to execute v7 migration: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV8 adds MAME-specific metadata to releases.
+func (db *DB) migrateV8() error {
+	schema := `
+		-- Add MAME metadata columns to releases
+		ALTER TABLE releases ADD COLUMN year TEXT;
+		ALTER TABLE releases ADD COLUMN manufacturer TEXT;
+		ALTER TABLE releases ADD COLUMN is_bios INTEGER DEFAULT 0;
+		ALTER TABLE releases ADD COLUMN is_device INTEGER DEFAULT 0;
+		ALTER TABLE releases ADD COLUMN is_mechanical INTEGER DEFAULT 0;
+
+		INSERT INTO schema_version (version) VALUES (8);
+	`
+
+	if _, err := db.conn.Exec(schema); err != nil {
+		return fmt.Errorf("failed to execute v8 migration: %w", err)
 	}
 
 	return nil
