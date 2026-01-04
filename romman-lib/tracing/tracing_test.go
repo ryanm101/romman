@@ -53,11 +53,7 @@ func TestSetup_EmptyEndpoint(t *testing.T) {
 }
 
 func TestTracer_ReturnsNonNil(t *testing.T) {
-	// Reset tracer for this test
-	oldTracer := tracer
-	tracer = nil
-	defer func() { tracer = oldTracer }()
-
+	// Tracer should always return a non-nil tracer (either configured or global noop)
 	tr := Tracer()
 	assert.NotNil(t, tr)
 }

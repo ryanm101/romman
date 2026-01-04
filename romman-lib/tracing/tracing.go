@@ -35,16 +35,13 @@ func DefaultConfig() Config {
 	}
 }
 
-var tracer trace.Tracer
-
 // Setup initializes the OpenTelemetry tracer provider.
 // Returns a shutdown function that should be called on application exit.
 func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error) {
 	noopShutdown := func(context.Context) error { return nil }
 
 	if !cfg.Enabled || cfg.Endpoint == "" {
-		// No-op tracer when disabled
-		tracer = otel.Tracer(serviceName)
+		// When disabled, use global noop tracer (no Setup needed)
 		return noopShutdown, nil
 	}
 
@@ -74,17 +71,14 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 	)
 
 	otel.SetTracerProvider(tp)
-	tracer = tp.Tracer(serviceName)
 
 	return tp.Shutdown, nil
 }
 
-// Tracer returns the configured tracer.
+// Tracer returns the configured tracer from the global provider.
+// This ensures all spans use the same tracer set up by Setup().
 func Tracer() trace.Tracer {
-	if tracer == nil {
-		return otel.Tracer(serviceName)
-	}
-	return tracer
+	return otel.GetTracerProvider().Tracer(serviceName)
 }
 
 // StartSpan starts a new span with the given name.
