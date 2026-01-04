@@ -46,6 +46,13 @@ type model struct {
 	// Status
 	scanning  bool
 	statusMsg string
+
+	// Help overlay
+	showHelp bool
+
+	// Rename operation
+	renaming    bool
+	renameItems []renameAction
 }
 
 type panel int
@@ -63,6 +70,7 @@ const (
 	filterFlagged
 	filterUnmatched
 	filterPreferred
+	filterDuplicates
 )
 
 type systemInfo struct {
@@ -86,6 +94,13 @@ type detailItem struct {
 	Path      string
 	MatchType string
 	Flags     string
+	DupGroup  int // For duplicate grouping
+}
+
+type renameAction struct {
+	OldPath string
+	NewPath string
+	Status  string // pending, done, error
 }
 
 func initialModel() model {
@@ -110,6 +125,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// Help overlay - always available
+		if msg.String() == "?" {
+			m.showHelp = !m.showHelp
+			return m, nil
+		}
+		if m.showHelp {
+			// Any key closes help
+			m.showHelp = false
+			return m, nil
+		}
+
 		// Search mode handling
 		if m.searching {
 			switch msg.String() {
@@ -188,6 +214,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailCursor = 0
 				m.loadingDetail = true
 				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "6", "d": // Duplicates
+				m.detailFilter = filterDuplicates
+				m.detailCursor = 0
+				m.loadingDetail = true
+				return m, loadDetail(m.selectedLib, m.detailFilter)
+			case "R": // Rename files (shift+R)
+				m.renaming = true
+				m.statusMsg = fmt.Sprintf("Renaming files in %s...", m.selectedLib)
+				return m, renameLibraryFiles(m.selectedLib)
 			}
 			return m, nil
 		}
@@ -257,6 +292,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.statusMsg = "Refreshing..."
 			return m, tea.Batch(loadSystems, loadLibraries)
+		case "R": // Rename files (shift+R)
+			if m.panel == panelLibraries && m.cursor < len(m.libraries) {
+				m.renaming = true
+				m.statusMsg = fmt.Sprintf("Renaming files in %s...", m.libraries[m.cursor].Name)
+				return m, renameLibraryFiles(m.libraries[m.cursor].Name)
+			}
 		}
 
 	case systemsMsg:
@@ -283,6 +324,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailItems = msg.items
 		m.detailCounts = msg.counts
 		m.loadingDetail = false
+
+	case renameMsg:
+		m.renaming = false
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Rename failed: %v", msg.err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Renamed %d files", msg.renamed)
+		}
+		// Refresh the detail view
+		if m.inDetail {
+			return m, loadDetail(m.selectedLib, m.detailFilter)
+		}
 	}
 
 	return m, nil
@@ -312,6 +365,10 @@ func (m model) maxItems() int {
 func (m model) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	if m.showHelp {
+		return m.viewHelp()
 	}
 
 	if m.inDetail {
@@ -447,7 +504,7 @@ func (m model) viewMain() string {
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	help := "Tab: switch | j/k: nav | Enter: details | s: scan | r: refresh | q: quit"
+	help := "Tab: switch | j/k: nav | Enter: details | s: scan | r: refresh | R: rename | ?: help | q: quit"
 
 	// Status bar
 	statusStyle := lipgloss.NewStyle().
@@ -486,6 +543,7 @@ func (m model) viewDetail() string {
 		{"Flagged", filterFlagged},
 		{"Unmatched", filterUnmatched},
 		{"Preferred", filterPreferred},
+		{"Duplicates", filterDuplicates},
 	}
 
 	var tabBar string
@@ -650,6 +708,76 @@ func (m model) viewDetail() string {
 	)
 }
 
+func (m model) viewHelp() string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("205")).
+		MarginBottom(1)
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Bold(true).
+		MarginTop(1)
+
+	var lines []string
+	lines = append(lines, titleStyle.Render("⌨️  Keyboard Shortcuts"))
+	lines = append(lines, "")
+
+	// Navigation
+	lines = append(lines, sectionStyle.Render("Navigation"))
+	lines = append(lines, keyStyle.Render("  j/↓")+"  "+descStyle.Render("Move down"))
+	lines = append(lines, keyStyle.Render("  k/↑")+"  "+descStyle.Render("Move up"))
+	lines = append(lines, keyStyle.Render("  PgUp")+"  "+descStyle.Render("Page up"))
+	lines = append(lines, keyStyle.Render("  PgDn")+"  "+descStyle.Render("Page down"))
+	lines = append(lines, keyStyle.Render("  Tab")+"  "+descStyle.Render("Switch panel"))
+	lines = append(lines, keyStyle.Render("  Enter")+"  "+descStyle.Render("Open library details"))
+	lines = append(lines, keyStyle.Render("  Esc")+"  "+descStyle.Render("Go back"))
+
+	// Actions
+	lines = append(lines, sectionStyle.Render("Actions"))
+	lines = append(lines, keyStyle.Render("  s")+"  "+descStyle.Render("Scan selected library/system"))
+	lines = append(lines, keyStyle.Render("  r")+"  "+descStyle.Render("Refresh data"))
+	lines = append(lines, keyStyle.Render("  R")+"  "+descStyle.Render("Rename files to DAT names"))
+	lines = append(lines, keyStyle.Render("  /")+"  "+descStyle.Render("Search in detail view"))
+
+	// Detail View Filters
+	lines = append(lines, sectionStyle.Render("Detail View Filters"))
+	lines = append(lines, keyStyle.Render("  1/m")+"  "+descStyle.Render("Matched"))
+	lines = append(lines, keyStyle.Render("  2/i")+"  "+descStyle.Render("Missing"))
+	lines = append(lines, keyStyle.Render("  3/f")+"  "+descStyle.Render("Flagged"))
+	lines = append(lines, keyStyle.Render("  4/u")+"  "+descStyle.Render("Unmatched"))
+	lines = append(lines, keyStyle.Render("  5/p")+"  "+descStyle.Render("Preferred"))
+	lines = append(lines, keyStyle.Render("  6/d")+"  "+descStyle.Render("Duplicates"))
+
+	// General
+	lines = append(lines, sectionStyle.Render("General"))
+	lines = append(lines, keyStyle.Render("  ?")+"  "+descStyle.Render("Toggle this help"))
+	lines = append(lines, keyStyle.Render("  q")+"  "+descStyle.Render("Quit"))
+
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Press any key to close"))
+
+	content := strings.Join(lines, "\n")
+
+	// Center the help box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205")).
+		Padding(1, 2).
+		Width(50)
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		boxStyle.Render(content))
+}
+
 // Messages
 type systemsMsg struct {
 	systems []systemInfo
@@ -668,6 +796,11 @@ type scanCompleteMsg struct {
 type detailMsg struct {
 	items  []detailItem
 	counts map[detailFilter]int
+}
+
+type renameMsg struct {
+	renamed int
+	err     error
 }
 
 // Commands
@@ -863,6 +996,37 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 					items = append(items, item)
 				}
 			}
+
+		case filterDuplicates:
+			// Find duplicate files (multiple files matching the same release)
+			rows, err := database.Conn().Query(`
+				SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, ''), r.id as dup_group
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				JOIN releases r ON r.id = re.release_id
+				JOIN libraries l ON l.id = sf.library_id
+				WHERE l.name = ?
+				AND r.id IN (
+					SELECT re2.release_id
+					FROM scanned_files sf2
+					JOIN matches m2 ON m2.scanned_file_id = sf2.id
+					JOIN rom_entries re2 ON re2.id = m2.rom_entry_id
+					JOIN libraries l2 ON l2.id = sf2.library_id
+					WHERE l2.name = ?
+					GROUP BY re2.release_id
+					HAVING COUNT(DISTINCT sf2.id) > 1
+				)
+				ORDER BY r.name, sf.path
+			`, libName, libName)
+			if err == nil {
+				defer func() { _ = rows.Close() }()
+				for rows.Next() {
+					var item detailItem
+					_ = rows.Scan(&item.Name, &item.Path, &item.MatchType, &item.Flags, &item.DupGroup)
+					items = append(items, item)
+				}
+			}
 		}
 
 		// Calculate counts for all filters
@@ -885,7 +1049,8 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 			SELECT COUNT(DISTINCT r.id)
 			FROM releases r
 			JOIN libraries l ON l.system_id = r.system_id
-			WHERE l.name = ? AND r.id NOT IN (
+			WHERE l.name = ?
+			AND r.id NOT IN (
 				SELECT DISTINCT re.release_id
 				FROM scanned_files sf
 				JOIN matches m ON m.scanned_file_id = sf.id
@@ -897,9 +1062,10 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 
 		// Flagged
 		_ = database.Conn().QueryRow(`
-			SELECT COUNT(DISTINCT m.id)
+			SELECT COUNT(DISTINCT re.release_id)
 			FROM scanned_files sf
 			JOIN matches m ON m.scanned_file_id = sf.id
+			JOIN rom_entries re ON re.id = m.rom_entry_id
 			JOIN libraries l ON l.id = sf.library_id
 			WHERE l.name = ? AND m.flags IS NOT NULL AND m.flags != ''
 		`, libName).Scan(&c)
@@ -923,6 +1089,22 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 			WHERE l.name = ? AND r.is_preferred = 1
 		`, libName).Scan(&c)
 		counts[filterPreferred] = c
+
+		// Duplicates (count of releases with multiple files)
+		_ = database.Conn().QueryRow(`
+			SELECT COUNT(*)
+			FROM (
+				SELECT re.release_id
+				FROM scanned_files sf
+				JOIN matches m ON m.scanned_file_id = sf.id
+				JOIN rom_entries re ON re.id = m.rom_entry_id
+				JOIN libraries l ON l.id = sf.library_id
+				WHERE l.name = ?
+				GROUP BY re.release_id
+				HAVING COUNT(DISTINCT sf.id) > 1
+			)
+		`, libName).Scan(&c)
+		counts[filterDuplicates] = c
 
 		return detailMsg{items: items, counts: counts}
 	}
@@ -994,4 +1176,24 @@ func renderProgressBar(pct int, width int) string {
 
 	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 	return barStyle.Render(filled) + lipgloss.NewStyle().Foreground(lipgloss.Color("235")).Render(empty)
+}
+
+func renameLibraryFiles(libName string) tea.Cmd {
+	return func() tea.Msg {
+		database, err := db.Open(context.Background(), getDBPath())
+		if err != nil {
+			return renameMsg{err: err}
+		}
+		defer func() { _ = database.Close() }()
+
+		manager := library.NewManager(database.Conn())
+		renamer := library.NewRenamer(database.Conn(), manager)
+
+		result, err := renamer.Rename(context.Background(), libName, false) // dryRun=false
+		if err != nil {
+			return renameMsg{err: err}
+		}
+
+		return renameMsg{renamed: result.Renamed}
+	}
 }
