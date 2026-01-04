@@ -166,7 +166,7 @@ func (imp *Importer) Import(ctx context.Context, datPath string) (*ImportResult,
 }
 
 func (imp *Importer) getOrCreateSystem(ctx context.Context, tx *sql.Tx, name string, dat *DATFile) (int64, bool, error) {
-	_, span := tracing.StartSpan(ctx, "dat.getOrCreateSystem",
+	ctx, span := tracing.StartSpan(ctx, "dat.getOrCreateSystem",
 		tracing.WithAttributes(attribute.String("system.name", name)),
 	)
 	defer span.End()
@@ -209,7 +209,7 @@ func (imp *Importer) getOrCreateSystem(ctx context.Context, tx *sql.Tx, name str
 }
 
 func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID, datSourceID int64, game Game) (bool, error) {
-	_, span := tracing.StartSpan(ctx, "game: "+game.Name,
+	ctx, span := tracing.StartSpan(ctx, "game: "+game.Name,
 		tracing.WithAttributes(
 			attribute.String("game.name", game.Name),
 			attribute.Int64("system.id", systemID),

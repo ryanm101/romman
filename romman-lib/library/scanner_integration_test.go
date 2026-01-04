@@ -45,7 +45,7 @@ func TestScannerIntegration(t *testing.T) {
 
 	// Create library manager and add library
 	manager := NewManager(db)
-	lib, err := manager.Add("testlib", tempDir, "TestSystem")
+	lib, err := manager.Add(context.Background(), "testlib", tempDir, "TestSystem")
 	if err != nil {
 		t.Fatalf("Failed to add library: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestScannerZipSupport(t *testing.T) {
 	}
 
 	manager := NewManager(db)
-	_, err = manager.Add("emptylib", "/nonexistent/path", "TestSystem")
+	_, err = manager.Add(context.Background(), "emptylib", "/nonexistent/path", "TestSystem")
 	if err != nil {
 		t.Fatalf("Failed to add library: %v", err)
 	}

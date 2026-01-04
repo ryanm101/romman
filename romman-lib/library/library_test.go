@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,36 +33,36 @@ func TestLibraryManager(t *testing.T) {
 	manager := NewManager(database.Conn())
 
 	// Test Add
-	lib, err := manager.Add("my-nes", libPath, "nes")
+	lib, err := manager.Add(context.Background(), "my-nes", libPath, "nes")
 	require.NoError(t, err)
 	assert.Equal(t, "my-nes", lib.Name)
 	assert.Equal(t, libPath, lib.RootPath)
 	assert.Equal(t, "nes", lib.SystemName)
 
 	// Test Get
-	lib2, err := manager.Get("my-nes")
+	lib2, err := manager.Get(context.Background(), "my-nes")
 	require.NoError(t, err)
 	assert.Equal(t, lib.ID, lib2.ID)
 	assert.Equal(t, lib.Name, lib2.Name)
 
 	// Test List
-	libs, err := manager.List()
+	libs, err := manager.List(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, libs, 1)
 
 	// Test Get non-existent
-	_, err = manager.Get("nonexistent")
+	_, err = manager.Get(context.Background(), "nonexistent")
 	assert.Error(t, err)
 
 	// Test Add with non-existent system
-	_, err = manager.Add("bad", libPath, "nonexistent")
+	_, err = manager.Add(context.Background(), "bad", libPath, "nonexistent")
 	assert.Error(t, err)
 
 	// Test Delete
-	err = manager.Delete("my-nes")
+	err = manager.Delete(context.Background(), "my-nes")
 	require.NoError(t, err)
 
-	libs, err = manager.List()
+	libs, err = manager.List(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, libs, 0)
 }

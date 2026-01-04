@@ -138,7 +138,7 @@ func exportRetroArch(libraryName, outputPath string) {
 	defer func() { _ = database.Close() }()
 
 	exporter := library.NewRetroArchExporter(database.Conn())
-	if err := exporter.ExportPlaylist(libraryName, outputPath); err != nil {
+	if err := exporter.ExportPlaylist(context.Background(), libraryName, outputPath); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error exporting RetroArch playlist: %v\n", err)
 		os.Exit(1)
 	}
@@ -171,7 +171,7 @@ func exportGamelist(libraryName, outputPath string, matchedOnly bool) {
 		PathPrefix:  "./",
 	}
 
-	data, err := exporter.ExportGamelist(libraryName, opts)
+	data, err := exporter.ExportGamelist(context.Background(), libraryName, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error exporting gamelist: %v\n", err)
 		os.Exit(1)
@@ -212,7 +212,7 @@ func exportLaunchBox(libraryName, outputPath string, matchedOnly bool) {
 		PathPrefix:  ".\\",
 	}
 
-	data, err := exporter.ExportLaunchBox(libraryName, opts)
+	data, err := exporter.ExportLaunchBox(context.Background(), libraryName, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error exporting LaunchBox: %v\n", err)
 		os.Exit(1)

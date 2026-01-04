@@ -130,7 +130,7 @@ func addLibrary(name, path, system string) {
 	}
 
 	manager := library.NewManager(database.Conn())
-	lib, err := manager.Add(name, absPath, system)
+	lib, err := manager.Add(context.Background(), name, absPath, system)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error adding library: %v\n", err)
 		os.Exit(1)
@@ -150,7 +150,7 @@ func listLibraries() {
 	defer func() { _ = database.Close() }()
 
 	manager := library.NewManager(database.Conn())
-	libs, err := manager.List()
+	libs, err := manager.List(context.Background())
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error listing libraries: %v\n", err)
 		os.Exit(1)
@@ -248,7 +248,7 @@ func showLibraryStatus(name string) {
 
 	scanner := library.NewScanner(database.Conn())
 
-	summary, err := scanner.GetSummary(name)
+	summary, err := scanner.GetSummary(context.Background(), name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting library summary: %v\n", err)
 		os.Exit(1)
@@ -266,7 +266,7 @@ func showLibraryStatus(name string) {
 		res["lastScan"] = summary.LastScan.Format("2006-01-02 15:04:05")
 	}
 
-	statuses, err := scanner.GetLibraryStatus(name)
+	statuses, err := scanner.GetLibraryStatus(context.Background(), name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting library status: %v\n", err)
 		os.Exit(1)
@@ -325,7 +325,7 @@ func showUnmatchedFiles(name string) {
 	defer func() { _ = database.Close() }()
 
 	scanner := library.NewScanner(database.Conn())
-	files, err := scanner.GetUnmatchedFiles(name)
+	files, err := scanner.GetUnmatchedFiles(context.Background(), name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting unmatched files: %v\n", err)
 		os.Exit(1)
@@ -458,7 +458,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 			stubsCreated++
 		}
 
-		_, err := manager.Add(lib.name, lib.path, lib.system)
+		_, err := manager.Add(context.Background(), lib.name, lib.path, lib.system)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				fmt.Printf("  Skipped: %s (already exists)\n", lib.name)
@@ -496,7 +496,7 @@ func scanAllLibraries(ctx context.Context) {
 	manager := library.NewManager(database.Conn())
 	// scanner removed from here to be created per-library with progress bar support
 
-	libs, err := manager.List()
+	libs, err := manager.List(context.Background())
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error listing libraries: %v\n", err)
 		os.Exit(1)
@@ -607,7 +607,7 @@ func verifyLibrary(libraryName string) {
 
 	fmt.Printf("Verifying library: %s\n\n", libraryName)
 
-	result, err := checker.Check(libraryName)
+	result, err := checker.Check(context.Background(), libraryName)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -812,7 +812,7 @@ func organizeLibrary(libraryName, outputDir string, flags []string) {
 	fmt.Println()
 
 	// Generate plan
-	result, err := organizer.Plan(libraryName, opts)
+	result, err := organizer.Plan(context.Background(), libraryName, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

@@ -159,7 +159,7 @@ type hashResult struct {
 
 // scanParallel performs parallel file discovery and hashing.
 func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, error) {
-	_, span := tracing.StartSpan(ctx, "scanParallel: "+lib.Name)
+	ctx, span := tracing.StartSpan(ctx, "scanParallel: "+lib.Name)
 	defer span.End()
 
 	jobs := make(chan fileJob, s.config.Workers*10)
@@ -372,7 +372,7 @@ func (s *Scanner) hashWorker(libraryID int64, jobs <-chan fileJob, results chan<
 
 // scanSequential is the original sequential scanning implementation.
 func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult, error) {
-	_, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
+	ctx, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
 	defer span.End()
 
 	result := &ScanResult{}

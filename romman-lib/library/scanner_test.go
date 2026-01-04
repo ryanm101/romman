@@ -50,7 +50,7 @@ func TestScanner_BasicScan(t *testing.T) {
 
 	// Add library
 	manager := NewManager(database.Conn())
-	_, err = manager.Add("test-lib", libPath, "nes")
+	_, err = manager.Add(context.Background(), "test-lib", libPath, "nes")
 	require.NoError(t, err)
 
 	// Scan
@@ -83,7 +83,7 @@ func TestScanner_HashCaching(t *testing.T) {
 	require.NoError(t, os.WriteFile(romPath, []byte("test content"), 0644)) // #nosec G306
 
 	manager := NewManager(database.Conn())
-	_, err = manager.Add("test-lib", libPath, "nes")
+	_, err = manager.Add(context.Background(), "test-lib", libPath, "nes")
 	require.NoError(t, err)
 
 	scanner := NewScanner(database.Conn())
@@ -131,7 +131,7 @@ func TestScanner_ZipSupport(t *testing.T) {
 	createTestZip(t, zipPath, "game.nes", []byte("zip rom content"))
 
 	manager := NewManager(database.Conn())
-	_, err = manager.Add("test-lib", libPath, "nes")
+	_, err = manager.Add(context.Background(), "test-lib", libPath, "nes")
 	require.NoError(t, err)
 
 	// Scan

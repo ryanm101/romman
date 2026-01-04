@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestExportGamelist(t *testing.T) {
 		PathPrefix: "./",
 	}
 
-	result, err := exporter.ExportGamelist("nes", opts)
+	result, err := exporter.ExportGamelist(context.Background(), "nes", opts)
 	require.NoError(t, err)
 
 	// Verify it contains valid XML
@@ -115,7 +116,7 @@ func TestExportLaunchBox(t *testing.T) {
 
 	opts := LaunchBoxOptions{}
 
-	result, err := exporter.ExportLaunchBox("nes", opts)
+	result, err := exporter.ExportLaunchBox(context.Background(), "nes", opts)
 	require.NoError(t, err)
 
 	// Verify it contains valid LaunchBox XML

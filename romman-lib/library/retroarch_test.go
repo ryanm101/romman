@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestRetroArchExporter_LibraryNotFound(t *testing.T) {
 
 	exporter := NewRetroArchExporter(database.Conn())
 
-	err = exporter.ExportPlaylist("nonexistent", "/tmp/test.lpl")
+	err = exporter.ExportPlaylist(context.Background(), "nonexistent", "/tmp/test.lpl")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "library not found")
 }
@@ -84,7 +85,7 @@ func TestRetroArchExporter_ExportPlaylist(t *testing.T) {
 	exporter := NewRetroArchExporter(database.Conn())
 
 	outputPath := filepath.Join(tmpDir, "nes.lpl")
-	err = exporter.ExportPlaylist("nes", outputPath)
+	err = exporter.ExportPlaylist(context.Background(), "nes", outputPath)
 	require.NoError(t, err)
 
 	// Verify the file was created

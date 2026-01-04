@@ -132,7 +132,7 @@ func (e *Exporter) Export(ctx context.Context, libraryName string, report Report
 }
 
 func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
-	_, span := tracing.StartSpan(ctx, "export.getMatched")
+	ctx, span := tracing.StartSpan(ctx, "export.getMatched")
 	defer span.End()
 
 	rows, err := e.db.QueryContext(ctx, `
@@ -162,7 +162,7 @@ func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRec
 }
 
 func (e *Exporter) getMissing(ctx context.Context, libraryID, systemID int64) ([]ExportRecord, error) {
-	_, span := tracing.StartSpan(ctx, "export.getMissing")
+	ctx, span := tracing.StartSpan(ctx, "export.getMissing")
 	defer span.End()
 
 	rows, err := e.db.QueryContext(ctx, `
@@ -197,7 +197,7 @@ func (e *Exporter) getMissing(ctx context.Context, libraryID, systemID int64) ([
 }
 
 func (e *Exporter) getPreferred(ctx context.Context, systemID int64) ([]ExportRecord, error) {
-	_, span := tracing.StartSpan(ctx, "export.getPreferred")
+	ctx, span := tracing.StartSpan(ctx, "export.getPreferred")
 	defer span.End()
 
 	rows, err := e.db.QueryContext(ctx, `
@@ -224,7 +224,7 @@ func (e *Exporter) getPreferred(ctx context.Context, systemID int64) ([]ExportRe
 }
 
 func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
-	_, span := tracing.StartSpan(ctx, "export.getUnmatched")
+	ctx, span := tracing.StartSpan(ctx, "export.getUnmatched")
 	defer span.End()
 
 	rows, err := e.db.QueryContext(ctx, `

@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestOrganizer_PlanEmpty(t *testing.T) {
 		Structure: "system",
 	}
 
-	result, err := organizer.Plan("test", opts)
+	result, err := organizer.Plan(context.Background(), "test", opts)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Empty(t, result.Actions, "should have no actions for empty library")

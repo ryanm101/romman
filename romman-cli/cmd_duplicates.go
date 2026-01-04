@@ -37,7 +37,7 @@ func listDuplicates(libraryName string) {
 	defer func() { _ = database.Close() }()
 
 	manager := library.NewManager(database.Conn())
-	lib, err := manager.Get(libraryName)
+	lib, err := manager.Get(context.Background(), libraryName)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
