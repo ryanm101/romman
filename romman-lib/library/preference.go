@@ -82,7 +82,7 @@ func (p *PreferenceSelector) SelectPreferred(ctx context.Context, systemID int64
 	defer span.End()
 
 	// Get all releases for the system
-	releases, err := p.getReleases(systemID)
+	releases, err := p.getReleases(ctx, systemID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return fmt.Errorf("failed to get releases: %w", err)
@@ -122,8 +122,8 @@ func (p *PreferenceSelector) SelectPreferred(ctx context.Context, systemID int64
 	return nil
 }
 
-func (p *PreferenceSelector) getReleases(systemID int64) ([]ReleaseCandidate, error) {
-	rows, err := p.db.Query(`
+func (p *PreferenceSelector) getReleases(ctx context.Context, systemID int64) ([]ReleaseCandidate, error) {
+	rows, err := p.db.QueryContext(ctx, `
 		SELECT id, name FROM releases WHERE system_id = ?
 	`, systemID)
 	if err != nil {

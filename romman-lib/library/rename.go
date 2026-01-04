@@ -59,7 +59,7 @@ func (r *Renamer) Rename(ctx context.Context, libraryName string, dryRun bool) (
 	result := &RenameResult{DryRun: dryRun}
 
 	// Get all matched files with their expected names
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT sf.id, sf.path, re.name, r.name as release_name
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -135,7 +135,7 @@ func (r *Renamer) Rename(ctx context.Context, libraryName string, dryRun bool) (
 		}
 
 		// Update database
-		_, err = r.db.Exec(`
+		_, err = r.db.ExecContext(ctx, `
 			UPDATE scanned_files SET path = ? WHERE id = ?
 		`, newPath, fileID)
 		if err != nil {

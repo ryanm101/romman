@@ -51,9 +51,9 @@ func NewDuplicateFinder(db *sql.DB) *DuplicateFinder {
 }
 
 // FindExactDuplicates finds files with identical SHA1 hashes.
-func (d *DuplicateFinder) FindExactDuplicates(libraryID int64) ([]Duplicate, error) {
+func (d *DuplicateFinder) FindExactDuplicates(ctx context.Context, libraryID int64) ([]Duplicate, error) {
 	// Find SHA1 hashes that appear more than once
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT sha1, COUNT(*) as cnt
 		FROM scanned_files
 		WHERE library_id = ? AND sha1 IS NOT NULL AND sha1 != ''
@@ -78,7 +78,7 @@ func (d *DuplicateFinder) FindExactDuplicates(libraryID int64) ([]Duplicate, err
 	// Get file details for each duplicate hash
 	var duplicates []Duplicate
 	for _, hash := range hashes {
-		files, err := d.getFilesForHash(libraryID, hash)
+		files, err := d.getFilesForHash(ctx, libraryID, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -95,9 +95,9 @@ func (d *DuplicateFinder) FindExactDuplicates(libraryID int64) ([]Duplicate, err
 }
 
 // FindVariantDuplicates finds files matched to different releases of the same game.
-func (d *DuplicateFinder) FindVariantDuplicates(libraryID int64) ([]Duplicate, error) {
+func (d *DuplicateFinder) FindVariantDuplicates(ctx context.Context, libraryID int64) ([]Duplicate, error) {
 	// Get all matched files with their release names (base title only)
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT sf.id, sf.path, sf.size, sf.sha1, sf.crc32, 
 		       m.match_type, COALESCE(m.flags, ''),
 		       r.name
@@ -151,9 +151,9 @@ func (d *DuplicateFinder) FindVariantDuplicates(libraryID int64) ([]Duplicate, e
 }
 
 // FindPackagingDuplicates finds multiple files matched to the same ROM entry.
-func (d *DuplicateFinder) FindPackagingDuplicates(libraryID int64) ([]Duplicate, error) {
+func (d *DuplicateFinder) FindPackagingDuplicates(ctx context.Context, libraryID int64) ([]Duplicate, error) {
 	// Find ROM entries that have multiple matched files
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT m.rom_entry_id, COUNT(*) as cnt
 		FROM matches m
 		JOIN scanned_files sf ON sf.id = m.scanned_file_id
@@ -179,7 +179,7 @@ func (d *DuplicateFinder) FindPackagingDuplicates(libraryID int64) ([]Duplicate,
 	// Get file details for each entry
 	var duplicates []Duplicate
 	for _, romEntryID := range romEntryIDs {
-		files, err := d.getFilesForROMEntry(libraryID, romEntryID)
+		files, err := d.getFilesForROMEntry(ctx, libraryID, romEntryID)
 		if err != nil {
 			return nil, err
 		}
@@ -205,21 +205,21 @@ func (d *DuplicateFinder) FindAllDuplicates(ctx context.Context, libraryID int64
 
 	var all []Duplicate
 
-	exact, err := d.FindExactDuplicates(libraryID)
+	exact, err := d.FindExactDuplicates(ctx, libraryID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("exact duplicates: %w", err)
 	}
 	all = append(all, exact...)
 
-	variants, err := d.FindVariantDuplicates(libraryID)
+	variants, err := d.FindVariantDuplicates(ctx, libraryID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("variant duplicates: %w", err)
 	}
 	all = append(all, variants...)
 
-	packaging, err := d.FindPackagingDuplicates(libraryID)
+	packaging, err := d.FindPackagingDuplicates(ctx, libraryID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("packaging duplicates: %w", err)
@@ -236,8 +236,8 @@ func (d *DuplicateFinder) FindAllDuplicates(ctx context.Context, libraryID int64
 	return all, nil
 }
 
-func (d *DuplicateFinder) getFilesForHash(libraryID int64, sha1 string) ([]DuplicateFile, error) {
-	rows, err := d.db.Query(`
+func (d *DuplicateFinder) getFilesForHash(ctx context.Context, libraryID int64, sha1 string) ([]DuplicateFile, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT sf.id, sf.path, sf.size, sf.sha1, sf.crc32,
 		       COALESCE(m.match_type, ''), COALESCE(m.flags, '')
 		FROM scanned_files sf
@@ -263,8 +263,8 @@ func (d *DuplicateFinder) getFilesForHash(libraryID int64, sha1 string) ([]Dupli
 	return files, nil
 }
 
-func (d *DuplicateFinder) getFilesForROMEntry(libraryID, romEntryID int64) ([]DuplicateFile, error) {
-	rows, err := d.db.Query(`
+func (d *DuplicateFinder) getFilesForROMEntry(ctx context.Context, libraryID, romEntryID int64) ([]DuplicateFile, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT sf.id, sf.path, sf.size, sf.sha1, sf.crc32,
 		       m.match_type, COALESCE(m.flags, '')
 		FROM scanned_files sf
