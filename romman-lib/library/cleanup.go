@@ -93,7 +93,7 @@ func (p *CleanupPlanner) GeneratePlan(ctx context.Context, libraryName string, q
 	)
 	defer span.End()
 
-	lib, err := p.manager.Get(libraryName)
+	lib, err := p.manager.Get(ctx, libraryName)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err

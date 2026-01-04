@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"encoding/xml"
 	"path/filepath"
 	"time"
@@ -35,8 +36,8 @@ type LaunchBoxOptions struct {
 }
 
 // ExportLaunchBox generates a LaunchBox platform XML for a library.
-func (e *Exporter) ExportLaunchBox(libraryName string, opts LaunchBoxOptions) ([]byte, error) {
-	lib, err := e.manager.Get(libraryName)
+func (e *Exporter) ExportLaunchBox(ctx context.Context, libraryName string, opts LaunchBoxOptions) ([]byte, error) {
+	lib, err := e.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
@@ -44,9 +45,9 @@ func (e *Exporter) ExportLaunchBox(libraryName string, opts LaunchBoxOptions) ([
 	var games []LBGame
 
 	if opts.MatchedOnly {
-		games, err = e.getMatchedLaunchBox(lib.ID, lib.SystemName, opts)
+		games, err = e.getMatchedLaunchBox(ctx, lib.ID, lib.SystemName, opts)
 	} else {
-		games, err = e.getAllReleasesLaunchBox(lib.SystemID, lib.ID, lib.SystemName, opts)
+		games, err = e.getAllReleasesLaunchBox(ctx, lib.SystemID, lib.ID, lib.SystemName, opts)
 	}
 
 	if err != nil {
@@ -64,8 +65,8 @@ func (e *Exporter) ExportLaunchBox(libraryName string, opts LaunchBoxOptions) ([
 	return append([]byte(xml.Header), output...), nil
 }
 
-func (e *Exporter) getMatchedLaunchBox(libraryID int64, systemName string, opts LaunchBoxOptions) ([]LBGame, error) {
-	rows, err := e.db.Query(`
+func (e *Exporter) getMatchedLaunchBox(ctx context.Context, libraryID int64, systemName string, opts LaunchBoxOptions) ([]LBGame, error) {
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT DISTINCT r.name, sf.path
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -100,8 +101,8 @@ func (e *Exporter) getMatchedLaunchBox(libraryID int64, systemName string, opts 
 	return games, nil
 }
 
-func (e *Exporter) getAllReleasesLaunchBox(systemID, libraryID int64, systemName string, opts LaunchBoxOptions) ([]LBGame, error) {
-	rows, err := e.db.Query(`
+func (e *Exporter) getAllReleasesLaunchBox(ctx context.Context, systemID, libraryID int64, systemName string, opts LaunchBoxOptions) ([]LBGame, error) {
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name, COALESCE(sf.path, '') as path
 		FROM releases r
 		LEFT JOIN rom_entries re ON re.release_id = r.id

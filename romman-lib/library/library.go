@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -28,10 +29,10 @@ func NewManager(db *sql.DB) *Manager {
 }
 
 // Add creates a new library for the given system.
-func (m *Manager) Add(name, rootPath, systemName string) (*Library, error) {
+func (m *Manager) Add(ctx context.Context, name, rootPath, systemName string) (*Library, error) {
 	// Look up system ID
 	var systemID int64
-	err := m.db.QueryRow("SELECT id FROM systems WHERE name = ?", systemName).Scan(&systemID)
+	err := m.db.QueryRowContext(ctx, "SELECT id FROM systems WHERE name = ?", systemName).Scan(&systemID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("system not found: %s", systemName)
 	}
@@ -40,7 +41,7 @@ func (m *Manager) Add(name, rootPath, systemName string) (*Library, error) {
 	}
 
 	// Insert library
-	result, err := m.db.Exec(`
+	result, err := m.db.ExecContext(ctx, `
 		INSERT INTO libraries (name, root_path, system_id)
 		VALUES (?, ?, ?)
 	`, name, rootPath, systemID)
@@ -64,11 +65,11 @@ func (m *Manager) Add(name, rootPath, systemName string) (*Library, error) {
 }
 
 // Get retrieves a library by name.
-func (m *Manager) Get(name string) (*Library, error) {
+func (m *Manager) Get(ctx context.Context, name string) (*Library, error) {
 	lib := &Library{}
 	var lastScanAt sql.NullTime
 
-	err := m.db.QueryRow(`
+	err := m.db.QueryRowContext(ctx, `
 		SELECT l.id, l.name, l.root_path, l.system_id, s.name, l.created_at, l.last_scan_at
 		FROM libraries l
 		JOIN systems s ON l.system_id = s.id
@@ -89,8 +90,8 @@ func (m *Manager) Get(name string) (*Library, error) {
 }
 
 // List returns all libraries.
-func (m *Manager) List() ([]*Library, error) {
-	rows, err := m.db.Query(`
+func (m *Manager) List(ctx context.Context) ([]*Library, error) {
+	rows, err := m.db.QueryContext(ctx, `
 		SELECT l.id, l.name, l.root_path, l.system_id, s.name, l.created_at, l.last_scan_at
 		FROM libraries l
 		JOIN systems s ON l.system_id = s.id
@@ -118,8 +119,8 @@ func (m *Manager) List() ([]*Library, error) {
 }
 
 // Delete removes a library and all its scanned files.
-func (m *Manager) Delete(name string) error {
-	result, err := m.db.Exec("DELETE FROM libraries WHERE name = ?", name)
+func (m *Manager) Delete(ctx context.Context, name string) error {
+	result, err := m.db.ExecContext(ctx, "DELETE FROM libraries WHERE name = ?", name)
 	if err != nil {
 		return fmt.Errorf("failed to delete library: %w", err)
 	}
@@ -136,7 +137,7 @@ func (m *Manager) Delete(name string) error {
 }
 
 // UpdateLastScan updates the last scan timestamp for a library.
-func (m *Manager) UpdateLastScan(libraryID int64) error {
-	_, err := m.db.Exec("UPDATE libraries SET last_scan_at = CURRENT_TIMESTAMP WHERE id = ?", libraryID)
+func (m *Manager) UpdateLastScan(ctx context.Context, libraryID int64) error {
+	_, err := m.db.ExecContext(ctx, "UPDATE libraries SET last_scan_at = CURRENT_TIMESTAMP WHERE id = ?", libraryID)
 	return err
 }

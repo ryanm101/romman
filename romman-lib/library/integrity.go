@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"crypto/sha1" // #nosec G505
 	"database/sql"
 	"encoding/hex"
@@ -38,8 +39,8 @@ func NewIntegrityChecker(db *sql.DB, manager *Manager) *IntegrityChecker {
 }
 
 // Check verifies all files in a library.
-func (c *IntegrityChecker) Check(libraryName string) (*IntegrityResult, error) {
-	lib, err := c.manager.Get(libraryName)
+func (c *IntegrityChecker) Check(ctx context.Context, libraryName string) (*IntegrityResult, error) {
+	lib, err := c.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +48,7 @@ func (c *IntegrityChecker) Check(libraryName string) (*IntegrityResult, error) {
 	result := &IntegrityResult{}
 
 	// Get all scanned files (non-archive only for now)
-	rows, err := c.db.Query(`
+	rows, err := c.db.QueryContext(ctx, `
 		SELECT id, path, sha1, size FROM scanned_files
 		WHERE library_id = ? AND archive_path IS NULL
 	`, lib.ID)
@@ -121,7 +122,7 @@ func (c *IntegrityChecker) Check(libraryName string) (*IntegrityResult, error) {
 	}
 
 	// Check for incomplete multi-file games
-	incompleteReleases, err := c.checkIncomplete(lib.ID)
+	incompleteReleases, err := c.checkIncomplete(ctx, lib.ID)
 	if err == nil {
 		for _, rel := range incompleteReleases {
 			result.Issues = append(result.Issues, IntegrityIssue{
@@ -142,8 +143,8 @@ type incompleteRelease struct {
 	Matched int
 }
 
-func (c *IntegrityChecker) checkIncomplete(libraryID int64) ([]incompleteRelease, error) {
-	rows, err := c.db.Query(`
+func (c *IntegrityChecker) checkIncomplete(ctx context.Context, libraryID int64) ([]incompleteRelease, error) {
+	rows, err := c.db.QueryContext(ctx, `
 		SELECT r.name, COUNT(re.id) as total,
 			COUNT(DISTINCT CASE WHEN m.id IS NOT NULL THEN re.id END) as matched
 		FROM releases r

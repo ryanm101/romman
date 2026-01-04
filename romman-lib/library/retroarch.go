@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -45,14 +46,14 @@ func NewRetroArchExporter(db *sql.DB) *RetroArchExporter {
 }
 
 // ExportPlaylist generates a .lpl playlist for a library.
-func (e *RetroArchExporter) ExportPlaylist(libraryName, outputPath string) error {
-	lib, err := e.manager.Get(libraryName)
+func (e *RetroArchExporter) ExportPlaylist(ctx context.Context, libraryName, outputPath string) error {
+	lib, err := e.manager.Get(ctx, libraryName)
 	if err != nil {
 		return fmt.Errorf("library not found: %w", err)
 	}
 
 	// Query matched files with release info
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT 
 			sf.path,
 			sf.archive_path,

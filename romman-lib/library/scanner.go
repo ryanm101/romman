@@ -123,7 +123,7 @@ func (s *Scanner) Scan(ctx context.Context, libraryName string) (*ScanResult, er
 	)
 	defer span.End()
 
-	lib, err := s.manager.Get(libraryName)
+	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err
@@ -291,7 +291,7 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 		return nil, fmt.Errorf("failed to match files: %w", err)
 	}
 
-	if err := s.manager.UpdateLastScan(lib.ID); err != nil {
+	if err := s.manager.UpdateLastScan(ctx, lib.ID); err != nil {
 		return nil, fmt.Errorf("failed to update scan time: %w", err)
 	}
 
@@ -464,7 +464,7 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 	result.MatchesFound = matchResult.MatchesFound
 	result.UnmatchedFiles = matchResult.UnmatchedFiles
 
-	if err := s.manager.UpdateLastScan(lib.ID); err != nil {
+	if err := s.manager.UpdateLastScan(ctx, lib.ID); err != nil {
 		tracing.RecordError(span, fmt.Errorf("failed to update scan time: %w", err))
 		return nil, fmt.Errorf("failed to update scan time: %w", err)
 	}

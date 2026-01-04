@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -27,13 +28,13 @@ func determineReleaseStatus(matched, total int) string {
 }
 
 // GetLibraryStatus returns the status of all releases for a library's system.
-func (s *Scanner) GetLibraryStatus(libraryName string) ([]*ReleaseStatus, error) {
-	lib, err := s.manager.Get(libraryName)
+func (s *Scanner) GetLibraryStatus(ctx context.Context, libraryName string) ([]*ReleaseStatus, error) {
+	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			r.id,
 			r.name,
@@ -67,13 +68,13 @@ func (s *Scanner) GetLibraryStatus(libraryName string) ([]*ReleaseStatus, error)
 }
 
 // GetUnmatchedFiles returns files that don't match any known ROM.
-func (s *Scanner) GetUnmatchedFiles(libraryName string) ([]string, error) {
-	lib, err := s.manager.Get(libraryName)
+func (s *Scanner) GetUnmatchedFiles(ctx context.Context, libraryName string) ([]string, error) {
+	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT sf.path, sf.archive_path
 		FROM scanned_files sf
 		LEFT JOIN matches m ON m.scanned_file_id = sf.id
@@ -113,8 +114,8 @@ type LibrarySummary struct {
 }
 
 // GetSummary returns a summary for a library.
-func (s *Scanner) GetSummary(libraryName string) (*LibrarySummary, error) {
-	lib, err := s.manager.Get(libraryName)
+func (s *Scanner) GetSummary(ctx context.Context, libraryName string) (*LibrarySummary, error) {
+	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func (s *Scanner) GetSummary(libraryName string) (*LibrarySummary, error) {
 	}
 
 	// Total files
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM scanned_files WHERE library_id = ?
 	`, lib.ID).Scan(&summary.TotalFiles)
 	if err != nil {
@@ -133,7 +134,7 @@ func (s *Scanner) GetSummary(libraryName string) (*LibrarySummary, error) {
 	}
 
 	// Matched files
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT scanned_file_id) FROM matches
 		WHERE scanned_file_id IN (SELECT id FROM scanned_files WHERE library_id = ?)
 	`, lib.ID).Scan(&summary.MatchedFiles)

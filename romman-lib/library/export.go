@@ -76,7 +76,7 @@ func (e *Exporter) Export(ctx context.Context, libraryName string, report Report
 	)
 	defer span.End()
 
-	lib, err := e.manager.Get(libraryName)
+	lib, err := e.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +97,13 @@ func (e *Exporter) Export(ctx context.Context, libraryName string, report Report
 	case ReportUnmatched:
 		result.Records, err = e.getUnmatched(ctx, lib.ID)
 	case Report1G1R:
-		result.Records, err = e.get1G1R(lib.ID, lib.SystemID)
+		result.Records, err = e.get1G1R(ctx, lib.ID, lib.SystemID)
 	case ReportStats:
-		return e.exportStats(lib, format)
+		return e.exportStats(ctx, lib, format)
 	case ReportDuplicates:
-		result.Records, err = e.getDuplicates(lib.ID)
+		result.Records, err = e.getDuplicates(ctx, lib.ID)
 	case ReportMismatch:
-		result.Records, err = e.getMismatch(lib.ID)
+		result.Records, err = e.getMismatch(ctx, lib.ID)
 	default:
 		return nil, fmt.Errorf("unknown report type: %s", report)
 	}
@@ -254,10 +254,10 @@ func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportR
 }
 
 // get1G1R returns matched preferred releases - one per game (1 Game, 1 ROM).
-func (e *Exporter) get1G1R(libraryID, systemID int64) ([]ExportRecord, error) {
+func (e *Exporter) get1G1R(ctx context.Context, libraryID, systemID int64) ([]ExportRecord, error) {
 	// Get preferred releases that are matched in this library
 	// We include parent_id to group clones
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT DISTINCT r.id, r.parent_id, r.name, sf.path, sf.sha1, m.match_type
 		FROM releases r
 		JOIN rom_entries re ON re.release_id = r.id
@@ -390,20 +390,20 @@ type StatsResult struct {
 	RegionBreakdown map[string]int `json:"region_breakdown,omitempty"`
 }
 
-func (e *Exporter) exportStats(lib *Library, format ExportFormat) ([]byte, error) {
+func (e *Exporter) exportStats(ctx context.Context, lib *Library, format ExportFormat) ([]byte, error) {
 	stats := StatsResult{
 		Library: lib.Name,
 		System:  lib.SystemName,
 	}
 
 	// Total releases for system
-	err := e.db.QueryRow("SELECT COUNT(*) FROM releases WHERE system_id = ?", lib.SystemID).Scan(&stats.TotalReleases)
+	err := e.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM releases WHERE system_id = ?", lib.SystemID).Scan(&stats.TotalReleases)
 	if err != nil {
 		return nil, err
 	}
 
 	// Matched releases (distinct)
-	err = e.db.QueryRow(`
+	err = e.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT re.release_id)
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -421,7 +421,7 @@ func (e *Exporter) exportStats(lib *Library, format ExportFormat) ([]byte, error
 
 	// Region breakdown (parse from release names)
 	stats.RegionBreakdown = make(map[string]int)
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name
 		FROM releases r
 		JOIN rom_entries re ON re.release_id = r.id
@@ -489,9 +489,9 @@ func hasSubstring(s, substr string) bool {
 	return false
 }
 
-func (e *Exporter) getDuplicates(libraryID int64) ([]ExportRecord, error) {
+func (e *Exporter) getDuplicates(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
 	// Find files that match multiple releases
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT sf.path, sf.sha1, COUNT(DISTINCT re.release_id) as match_count
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -521,10 +521,10 @@ func (e *Exporter) getDuplicates(libraryID int64) ([]ExportRecord, error) {
 
 // getMismatch finds files where the scanned hash doesn't match the expected DAT hash.
 // This can indicate file corruption or incorrect file identification.
-func (e *Exporter) getMismatch(libraryID int64) ([]ExportRecord, error) {
+func (e *Exporter) getMismatch(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
 	// Find matched files where the file hash differs from expected ROM hash
 	// This happens when we match by CRC32 but SHA1 differs, or vice versa
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name, sf.path, re.sha1 as expected, sf.sha1 as actual
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id

@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -47,8 +48,8 @@ func NewOrganizer(db *sql.DB, manager *Manager) *Organizer {
 }
 
 // Plan generates an organization plan without executing it.
-func (o *Organizer) Plan(libraryName string, opts OrganizeOptions) (*OrganizeResult, error) {
-	lib, err := o.manager.Get(libraryName)
+func (o *Organizer) Plan(ctx context.Context, libraryName string, opts OrganizeOptions) (*OrganizeResult, error) {
+	lib, err := o.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +74,7 @@ func (o *Organizer) Plan(libraryName string, opts OrganizeOptions) (*OrganizeRes
 
 	query += " GROUP BY sf.id ORDER BY r.name"
 
-	rows, err := o.db.Query(query, args...)
+	rows, err := o.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query matched files: %w", err)
 	}

@@ -50,7 +50,7 @@ func (r *Renamer) Rename(ctx context.Context, libraryName string, dryRun bool) (
 	)
 	defer span.End()
 
-	lib, err := r.manager.Get(libraryName)
+	lib, err := r.manager.Get(ctx, libraryName)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err
