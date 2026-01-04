@@ -7,6 +7,8 @@ github.com/Henry-Sarabia/igdb/v2 v2.0.0-alpha.4 h1:ZsyBtHcuEBVyrsP2oYIHELEAt/W18
 github.com/Henry-Sarabia/igdb/v2 v2.0.0-alpha.4/go.mod h1:ooRt7UmyP40FAZncIkpM6fJ0LBUD3aMNRJQfLxGCCG8=
 github.com/Henry-Sarabia/sliceconv v1.0.2 h1:1zH/sJmocRZz1g1FrmU06GsbskWLWglj6IHhFB9TdBA=
 github.com/Henry-Sarabia/sliceconv v1.0.2/go.mod h1:FNvuZcThTpCgAjQQZjPSx7PkS/DYRT6jTV3oPQGP2lU=
+github.com/XSAM/otelsql v0.41.0 h1:uZifjQhZhv5EDYJh+IVk1DiYxQZJBlNSen0MBFnfxB8=
+github.com/XSAM/otelsql v0.41.0/go.mod h1:NMQT0PiKoFILp9QgjQz+D5mvW+9mT0suR7OejqrtMaM=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=

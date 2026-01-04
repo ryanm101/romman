@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/Henry-Sarabia/igdb/v2 v2.0.0-alpha.4
+	github.com/XSAM/otelsql v0.41.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1

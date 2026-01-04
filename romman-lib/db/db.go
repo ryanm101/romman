@@ -3,7 +3,10 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"path/filepath"
 
+	"github.com/XSAM/otelsql"
+	"go.opentelemetry.io/otel/attribute"
 	_ "modernc.org/sqlite"
 )
 
@@ -14,11 +17,30 @@ type DB struct {
 }
 
 // Open opens or creates a SQLite database at the given path.
+// The connection is instrumented with OpenTelemetry for automatic query tracing.
 func Open(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite", path)
+	dbName := filepath.Base(path)
+
+	// Use otelsql to wrap the database connection with tracing
+	conn, err := otelsql.Open("sqlite", path,
+		otelsql.WithAttributes(
+			attribute.String("db.system", "sqlite"),
+			attribute.String("db.name", dbName),
+		),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			OmitConnResetSession: true,
+			OmitConnPrepare:      true,
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Register metrics for connection pool health (ignore error, metrics are optional)
+	_, _ = otelsql.RegisterDBStatsMetrics(conn, otelsql.WithAttributes(
+		attribute.String("db.system", "sqlite"),
+		attribute.String("db.name", dbName),
+	))
 
 	// Enable WAL mode for better concurrent access
 	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
