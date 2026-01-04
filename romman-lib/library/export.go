@@ -89,13 +89,13 @@ func (e *Exporter) Export(ctx context.Context, libraryName string, report Report
 
 	switch report {
 	case ReportMatched:
-		result.Records, err = e.getMatched(lib.ID)
+		result.Records, err = e.getMatched(ctx, lib.ID)
 	case ReportMissing:
-		result.Records, err = e.getMissing(lib.ID, lib.SystemID)
+		result.Records, err = e.getMissing(ctx, lib.ID, lib.SystemID)
 	case ReportPreferred:
-		result.Records, err = e.getPreferred(lib.SystemID)
+		result.Records, err = e.getPreferred(ctx, lib.SystemID)
 	case ReportUnmatched:
-		result.Records, err = e.getUnmatched(lib.ID)
+		result.Records, err = e.getUnmatched(ctx, lib.ID)
 	case Report1G1R:
 		result.Records, err = e.get1G1R(lib.ID, lib.SystemID)
 	case ReportStats:
@@ -131,7 +131,10 @@ func (e *Exporter) Export(ctx context.Context, libraryName string, report Report
 	}
 }
 
-func (e *Exporter) getMatched(libraryID int64) ([]ExportRecord, error) {
+func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
+	_, span := tracing.StartSpan(ctx, "export.getMatched")
+	defer span.End()
+
 	rows, err := e.db.Query(`
 		SELECT r.name, sf.path, sf.sha1, m.match_type, COALESCE(m.flags, '')
 		FROM scanned_files sf
@@ -142,6 +145,7 @@ func (e *Exporter) getMatched(libraryID int64) ([]ExportRecord, error) {
 		ORDER BY r.name
 	`, libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -157,7 +161,10 @@ func (e *Exporter) getMatched(libraryID int64) ([]ExportRecord, error) {
 	return records, nil
 }
 
-func (e *Exporter) getMissing(libraryID, systemID int64) ([]ExportRecord, error) {
+func (e *Exporter) getMissing(ctx context.Context, libraryID, systemID int64) ([]ExportRecord, error) {
+	_, span := tracing.StartSpan(ctx, "export.getMissing")
+	defer span.End()
+
 	rows, err := e.db.Query(`
 		SELECT r.name
 		FROM releases r
@@ -172,6 +179,7 @@ func (e *Exporter) getMissing(libraryID, systemID int64) ([]ExportRecord, error)
 		ORDER BY r.name
 	`, systemID, libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -188,13 +196,17 @@ func (e *Exporter) getMissing(libraryID, systemID int64) ([]ExportRecord, error)
 	return records, nil
 }
 
-func (e *Exporter) getPreferred(systemID int64) ([]ExportRecord, error) {
+func (e *Exporter) getPreferred(ctx context.Context, systemID int64) ([]ExportRecord, error) {
+	_, span := tracing.StartSpan(ctx, "export.getPreferred")
+	defer span.End()
+
 	rows, err := e.db.Query(`
 		SELECT name FROM releases
 		WHERE system_id = ? AND is_preferred = 1
 		ORDER BY name
 	`, systemID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -211,7 +223,10 @@ func (e *Exporter) getPreferred(systemID int64) ([]ExportRecord, error) {
 	return records, nil
 }
 
-func (e *Exporter) getUnmatched(libraryID int64) ([]ExportRecord, error) {
+func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportRecord, error) {
+	_, span := tracing.StartSpan(ctx, "export.getUnmatched")
+	defer span.End()
+
 	rows, err := e.db.Query(`
 		SELECT sf.path, sf.sha1
 		FROM scanned_files sf
@@ -220,6 +235,7 @@ func (e *Exporter) getUnmatched(libraryID int64) ([]ExportRecord, error) {
 		ORDER BY sf.path
 	`, libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
