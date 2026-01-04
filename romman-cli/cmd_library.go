@@ -10,7 +10,9 @@ import (
 
 	"github.com/ryanm101/romman-lib/dat"
 	"github.com/ryanm101/romman-lib/library"
+	"github.com/ryanm101/romman-lib/tracing"
 	"github.com/schollz/progressbar/v3"
+	"go.opentelemetry.io/otel/baggage"
 )
 
 func handleLibraryCommand(ctx context.Context, args []string) {
@@ -25,9 +27,9 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			fmt.Println("Usage: romman library add <name> <path> <system>")
 			os.Exit(1)
 		}
-		addLibrary(args[1], args[2], args[3])
+		addLibrary(ctx, args[1], args[2], args[3])
 	case "list":
-		listLibraries()
+		listLibraries(ctx)
 	case "scan":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library scan <name>")
@@ -39,13 +41,13 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			fmt.Println("Usage: romman library status <name>")
 			os.Exit(1)
 		}
-		showLibraryStatus(args[1])
+		showLibraryStatus(ctx, args[1])
 	case "unmatched":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library unmatched <name>")
 			os.Exit(1)
 		}
-		showUnmatchedFiles(args[1])
+		showUnmatchedFiles(ctx, args[1])
 	case "discover":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library discover <parent-dir> [--add] [--force]")
@@ -61,7 +63,7 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 				force = true
 			}
 		}
-		discoverLibraries(args[1], autoAdd, force)
+		discoverLibraries(ctx, args[1], autoAdd, force)
 	case "scan-all":
 		scanAllLibraries(ctx)
 	case "rename":
@@ -70,13 +72,13 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			os.Exit(1)
 		}
 		dryRun := len(args) >= 3 && args[2] == "--dry-run"
-		renameLibraryFiles(args[1], dryRun)
+		renameFiles(ctx, args[1], dryRun)
 	case "verify":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library verify <name>")
 			os.Exit(1)
 		}
-		verifyLibrary(args[1])
+		checkLibrary(ctx, args[1])
 	case "scrape":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library scrape <name> [--force]")
@@ -92,28 +94,28 @@ func handleLibraryCommand(ctx context.Context, args []string) {
 			fmt.Println("Usage: romman library link <name>")
 			os.Exit(1)
 		}
-		linkLibrary(args[1])
+		linkLibrary(ctx, args[1])
 	case "organize":
 		if len(args) < 3 {
 			fmt.Println("Usage: romman library organize <name> <output-dir> [--dry-run] [--preferred] [--rename] [--structure=system]")
 			os.Exit(1)
 		}
-		organizeLibrary(args[1], args[2], args[3:])
+		organizeLibrary(ctx, args[1], args[2], args[3:])
 	default:
 		fmt.Printf("Unknown library command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func addLibrary(name, path, system string) {
-	database, err := openDB()
+func addLibrary(ctx context.Context, name, rootPath, system string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
 	}
 	defer func() { _ = database.Close() }()
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(rootPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 		os.Exit(1)
@@ -130,7 +132,7 @@ func addLibrary(name, path, system string) {
 	}
 
 	manager := library.NewManager(database.Conn())
-	lib, err := manager.Add(context.Background(), name, absPath, system)
+	lib, err := manager.Add(ctx, name, absPath, system)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error adding library: %v\n", err)
 		os.Exit(1)
@@ -141,8 +143,11 @@ func addLibrary(name, path, system string) {
 	fmt.Printf("  System: %s\n", lib.SystemName)
 }
 
-func listLibraries() {
-	database, err := openDB()
+func listLibraries(ctx context.Context) {
+	ctx, span := tracing.StartSpan(ctx, "library.List")
+	defer span.End()
+
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -150,7 +155,7 @@ func listLibraries() {
 	defer func() { _ = database.Close() }()
 
 	manager := library.NewManager(database.Conn())
-	libs, err := manager.List(context.Background())
+	libs, err := manager.List(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error listing libraries: %v\n", err)
 		os.Exit(1)
@@ -186,7 +191,12 @@ func listLibraries() {
 }
 
 func scanLibrary(ctx context.Context, name string) {
-	database, err := openDB()
+	// Add library name to baggage
+	m, _ := baggage.NewMember("library.name", name)
+	b, _ := baggage.New(m)
+	ctx = baggage.ContextWithBaggage(ctx, b)
+
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -238,8 +248,8 @@ func scanLibrary(ctx context.Context, name string) {
 	fmt.Printf("Unmatched files: %d\n", result.UnmatchedFiles)
 }
 
-func showLibraryStatus(name string) {
-	database, err := openDB()
+func showLibraryStatus(ctx context.Context, name string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -248,7 +258,7 @@ func showLibraryStatus(name string) {
 
 	scanner := library.NewScanner(database.Conn())
 
-	summary, err := scanner.GetSummary(context.Background(), name)
+	summary, err := scanner.GetSummary(ctx, name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting library summary: %v\n", err)
 		os.Exit(1)
@@ -266,7 +276,7 @@ func showLibraryStatus(name string) {
 		res["lastScan"] = summary.LastScan.Format("2006-01-02 15:04:05")
 	}
 
-	statuses, err := scanner.GetLibraryStatus(context.Background(), name)
+	statuses, err := scanner.GetLibraryStatus(ctx, name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting library status: %v\n", err)
 		os.Exit(1)
@@ -316,8 +326,8 @@ func showLibraryStatus(name string) {
 	fmt.Printf("  Missing: %d\n", missing)
 }
 
-func showUnmatchedFiles(name string) {
-	database, err := openDB()
+func showUnmatchedFiles(ctx context.Context, name string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -325,7 +335,7 @@ func showUnmatchedFiles(name string) {
 	defer func() { _ = database.Close() }()
 
 	scanner := library.NewScanner(database.Conn())
-	files, err := scanner.GetUnmatchedFiles(context.Background(), name)
+	files, err := scanner.GetUnmatchedFiles(ctx, name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error getting unmatched files: %v\n", err)
 		os.Exit(1)
@@ -346,15 +356,15 @@ func showUnmatchedFiles(name string) {
 	}
 }
 
-func discoverLibraries(parentDir string, autoAdd bool, force bool) {
-	database, err := openDB()
+func discoverLibraries(ctx context.Context, rootDir string, autoAdd, force bool) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
 	}
 	defer func() { _ = database.Close() }()
 
-	absPath, err := filepath.Abs(parentDir)
+	absPath, err := filepath.Abs(rootDir)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 		os.Exit(1)
@@ -399,7 +409,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 		}
 
 		var systemExists bool
-		err := database.Conn().QueryRow("SELECT 1 FROM systems WHERE name = ?", system).Scan(&systemExists)
+		err := database.Conn().QueryRowContext(ctx, "SELECT 1 FROM systems WHERE name = ?", system).Scan(&systemExists)
 		if err != nil {
 			// System doesn't exist in DB
 			if force {
@@ -432,10 +442,10 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 	if !autoAdd {
 		if force {
 			fmt.Println("\nTo add these libraries with stub systems, run with --add --force flags:")
-			fmt.Printf("  romman library discover %s --add --force\n", parentDir)
+			fmt.Printf("  romman library discover %s --add --force\n", rootDir)
 		} else {
 			fmt.Println("\nTo add these libraries, run with --add flag:")
-			fmt.Printf("  romman library discover %s --add\n", parentDir)
+			fmt.Printf("  romman library discover %s --add\n", rootDir)
 		}
 		return
 	}
@@ -447,7 +457,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 	for _, lib := range discovered {
 		// Create stub system if needed
 		if lib.stubCreated {
-			_, err := database.Conn().Exec(`
+			_, err := database.Conn().ExecContext(ctx, `
 				INSERT OR IGNORE INTO systems (name, dat_name, dat_description)
 				VALUES (?, ?, ?)
 			`, lib.system, lib.system, fmt.Sprintf("Stub system for %s (no DAT imported)", lib.system))
@@ -458,7 +468,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 			stubsCreated++
 		}
 
-		_, err := manager.Add(context.Background(), lib.name, lib.path, lib.system)
+		_, err := manager.Add(ctx, lib.name, lib.path, lib.system)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				fmt.Printf("  Skipped: %s (already exists)\n", lib.name)
@@ -486,7 +496,7 @@ func discoverLibraries(parentDir string, autoAdd bool, force bool) {
 }
 
 func scanAllLibraries(ctx context.Context) {
-	database, err := openDB()
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -496,7 +506,7 @@ func scanAllLibraries(ctx context.Context) {
 	manager := library.NewManager(database.Conn())
 	// scanner removed from here to be created per-library with progress bar support
 
-	libs, err := manager.List(context.Background())
+	libs, err := manager.List(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error listing libraries: %v\n", err)
 		os.Exit(1)
@@ -548,8 +558,8 @@ func scanAllLibraries(ctx context.Context) {
 	fmt.Println("\nDone.")
 }
 
-func renameLibraryFiles(libraryName string, dryRun bool) {
-	database, err := openDB()
+func renameFiles(ctx context.Context, name string, dryRun bool) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -563,9 +573,9 @@ func renameLibraryFiles(libraryName string, dryRun bool) {
 	if dryRun {
 		mode = "DRY-RUN"
 	}
-	fmt.Printf("Renaming files in %s [%s]...\n\n", libraryName, mode)
+	fmt.Printf("Renaming files in %s [%s]...\n\n", name, mode)
 
-	result, err := renamer.Rename(context.Background(), libraryName, dryRun)
+	result, err := renamer.Rename(ctx, name, dryRun)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -594,8 +604,8 @@ func renameLibraryFiles(libraryName string, dryRun bool) {
 	}
 }
 
-func verifyLibrary(libraryName string) {
-	database, err := openDB()
+func checkLibrary(ctx context.Context, name string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -605,9 +615,9 @@ func verifyLibrary(libraryName string) {
 	manager := library.NewManager(database.Conn())
 	checker := library.NewIntegrityChecker(database.Conn(), manager)
 
-	fmt.Printf("Verifying library: %s\n\n", libraryName)
+	fmt.Printf("Verifying library: %s\n\n", name)
 
-	result, err := checker.Check(context.Background(), libraryName)
+	result, err := checker.Check(ctx, name)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -628,7 +638,7 @@ func verifyLibrary(libraryName string) {
 }
 
 func scrapeLibrary(ctx context.Context, name string, force bool) {
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)
@@ -732,8 +742,8 @@ func truncateString(s string, max int) string {
 	return s
 }
 
-func linkLibrary(name string) {
-	database, err := openDB()
+func linkLibrary(ctx context.Context, name string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)
@@ -765,8 +775,8 @@ func linkLibrary(name string) {
 	fmt.Printf("✓ Linked %d clones.\n", updated)
 }
 
-func organizeLibrary(libraryName, outputDir string, flags []string) {
-	database, err := openDB()
+func organizeLibrary(ctx context.Context, libraryName, outputDir string, flags []string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

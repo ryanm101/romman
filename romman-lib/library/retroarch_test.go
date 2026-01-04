@@ -17,7 +17,7 @@ func TestNewRetroArchExporter(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 
@@ -29,7 +29,7 @@ func TestRetroArchExporter_LibraryNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 
@@ -44,7 +44,7 @@ func TestRetroArchExporter_ExportPlaylist(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 

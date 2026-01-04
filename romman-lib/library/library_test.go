@@ -16,7 +16,7 @@ func TestLibraryManager(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 

@@ -8,7 +8,7 @@ import (
 	"github.com/ryanm101/romman-lib/library"
 )
 
-func handlePreferCommand(args []string) {
+func handlePreferCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman prefer <command>")
 		os.Exit(1)
@@ -20,21 +20,21 @@ func handlePreferCommand(args []string) {
 			fmt.Println("Usage: romman prefer rebuild <system>")
 			os.Exit(1)
 		}
-		rebuildPreferred(args[1])
+		rebuildPreferences(ctx, args[1])
 	case "list":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman prefer list <system>")
 			os.Exit(1)
 		}
-		listPreferred(args[1])
+		listPreferences(ctx, args[1])
 	default:
 		fmt.Printf("Unknown prefer command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func rebuildPreferred(systemName string) {
-	database, err := openDB()
+func rebuildPreferences(ctx context.Context, systemName string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -82,8 +82,8 @@ func rebuildPreferred(systemName string) {
 	fmt.Printf("  Ignored variants: %d\n", ignoredCount)
 }
 
-func listPreferred(systemName string) {
-	database, err := openDB()
+func listPreferences(ctx context.Context, systemName string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

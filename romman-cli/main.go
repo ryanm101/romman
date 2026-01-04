@@ -9,12 +9,18 @@ import (
 	"github.com/ryanm101/romman-lib/db"
 	"github.com/ryanm101/romman-lib/logging"
 	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/baggage"
 )
 
 var cfg *config.Config
 
 func main() {
 	ctx := context.Background()
+
+	// Set global baggage
+	m, _ := baggage.NewMember("app.version", "2.0.0")
+	b, _ := baggage.New(m)
+	ctx = baggage.ContextWithBaggage(ctx, b)
 
 	// Load config
 	var err error
@@ -66,7 +72,7 @@ func main() {
 			fmt.Println("Commands: list, info, status")
 			os.Exit(1)
 		}
-		handleSystemsCommand(args[1:])
+		handleSystemsCommand(ctx, args[1:])
 	case "library":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman library <command>")
@@ -80,21 +86,21 @@ func main() {
 			fmt.Println("Commands: list")
 			os.Exit(1)
 		}
-		handleDuplicatesCommand(args[1:])
+		handleDuplicatesCommand(ctx, args[1:])
 	case "cleanup":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman cleanup <command>")
 			fmt.Println("Commands: plan, exec")
 			os.Exit(1)
 		}
-		handleCleanupCommand(args[1:])
+		handleCleanupCommand(ctx, args[1:])
 	case "prefer":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman prefer <command>")
 			fmt.Println("Commands: rebuild, list")
 			os.Exit(1)
 		}
-		handlePreferCommand(args[1:])
+		handlePreferCommand(ctx, args[1:])
 	case "export":
 		if len(args) < 3 {
 			fmt.Println("Usage: romman export <library> <report> <format> [file]")
@@ -103,20 +109,20 @@ func main() {
 			fmt.Println("Formats: csv, json, retroarch")
 			os.Exit(1)
 		}
-		handleExportCommand(args[1:])
+		handleExportCommand(ctx, args[1:])
 
 	case "help", "-h", "--help":
 		printUsage()
 	case "doctor":
-		handleDoctorCommand(args[1:])
+		handleDoctorCommand(ctx, args[1:])
 	case "backup":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman backup <destination>")
 			os.Exit(1)
 		}
-		handleBackupCommand(args[1:])
+		handleBackupCommand(ctx, args[1:])
 	case "config":
-		handleConfigCommand(args[1:])
+		handleConfigCommand(ctx, args[1:])
 	case "scrape":
 		handleScrapeCommand(ctx, args[1:])
 	default:
@@ -171,6 +177,6 @@ func getDBPath() string {
 	return cfg.GetDBPath()
 }
 
-func openDB() (*db.DB, error) {
-	return db.Open(getDBPath())
+func openDB(ctx context.Context) (*db.DB, error) {
+	return db.Open(ctx, getDBPath())
 }

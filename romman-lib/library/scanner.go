@@ -17,6 +17,7 @@ import (
 	"github.com/ryanm101/romman-lib/metrics"
 	"github.com/ryanm101/romman-lib/tracing"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ScanResult contains statistics from a library scan.
@@ -182,6 +183,12 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 	}
 
 	// Start workers
+	span.AddEvent("discovery_complete", trace.WithAttributes(
+		attribute.Int64("files_found", atomic.LoadInt64(&totalFiles)),
+	))
+	span.AddEvent("hashing_started", trace.WithAttributes(
+		attribute.Int("worker_count", s.config.Workers),
+	))
 	var wg sync.WaitGroup
 	for i := 0; i < s.config.Workers; i++ {
 		wg.Add(1)
@@ -223,22 +230,19 @@ func (s *Scanner) scanParallel(ctx context.Context, lib *Library) (*ScanResult, 
 				}
 				batch = batch[:0]
 			}
-
-			if s.config.OnProgress != nil {
-				s.config.OnProgress(ScanProgress{
-					FilesScanned: atomic.LoadInt64(&filesScanned),
-					FilesHashed:  atomic.LoadInt64(&filesHashed),
-					FilesSkipped: atomic.LoadInt64(&filesSkipped),
-					TotalFiles:   atomic.LoadInt64(&totalFiles),
-				})
-			}
 		}
 
+		// Process remaining items
 		if len(batch) > 0 {
 			if err := s.storeBatch(lib.ID, batch); err != nil {
 				collectorErr = err
 			}
 		}
+
+		span.AddEvent("hashing_complete", trace.WithAttributes(
+			attribute.Int64("files_hashed", atomic.LoadInt64(&filesHashed)),
+			attribute.Int64("files_skipped", atomic.LoadInt64(&filesSkipped)),
+		))
 	}()
 
 	// Walk and discover files
@@ -375,6 +379,8 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 	ctx, span := tracing.StartSpan(ctx, "scanSequential: "+lib.Name)
 	defer span.End()
 
+	span.AddEvent("discovery_started")
+
 	result := &ScanResult{}
 	var totalFiles int64
 
@@ -390,6 +396,11 @@ func (s *Scanner) scanSequential(ctx context.Context, lib *Library) (*ScanResult
 		})
 		s.config.OnProgress(ScanProgress{TotalFiles: totalFiles})
 	}
+
+	span.AddEvent("discovery_complete", trace.WithAttributes(
+		attribute.Int64("files_found", totalFiles),
+	))
+	span.AddEvent("hashing_started")
 
 	err := filepath.Walk(lib.RootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {

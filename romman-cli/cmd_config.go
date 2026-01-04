@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
-func handleConfigCommand(args []string) {
+func handleConfigCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman config <command>")
 		fmt.Println("Commands: show, init")

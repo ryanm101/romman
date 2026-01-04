@@ -672,7 +672,7 @@ type detailMsg struct {
 
 // Commands
 func loadSystems() tea.Msg {
-	database, err := db.Open(getDBPath())
+	database, err := db.Open(context.Background(), getDBPath())
 	if err != nil {
 		return systemsMsg{err: err}
 	}
@@ -703,7 +703,7 @@ func loadSystems() tea.Msg {
 }
 
 func loadLibraries() tea.Msg {
-	database, err := db.Open(getDBPath())
+	database, err := db.Open(context.Background(), getDBPath())
 	if err != nil {
 		return librariesMsg{err: err}
 	}
@@ -741,7 +741,7 @@ func loadLibraries() tea.Msg {
 
 func loadDetail(libName string, filter detailFilter) tea.Cmd {
 	return func() tea.Msg {
-		database, err := db.Open(getDBPath())
+		database, err := db.Open(context.Background(), getDBPath())
 		if err != nil {
 			return detailMsg{}
 		}
@@ -930,7 +930,7 @@ func loadDetail(libName string, filter detailFilter) tea.Cmd {
 
 func scanLibrary(name string) tea.Cmd {
 	return func() tea.Msg {
-		database, err := db.Open(getDBPath())
+		database, err := db.Open(context.Background(), getDBPath())
 		if err != nil {
 			return scanCompleteMsg{err: err}
 		}
@@ -946,7 +946,7 @@ func scanLibrary(name string) tea.Cmd {
 // scanLibraries scans multiple libraries sequentially
 func scanLibraries(names []string) tea.Cmd {
 	return func() tea.Msg {
-		database, err := db.Open(getDBPath())
+		database, err := db.Open(context.Background(), getDBPath())
 		if err != nil {
 			return scanCompleteMsg{err: err}
 		}

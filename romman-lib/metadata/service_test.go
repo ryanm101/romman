@@ -31,7 +31,7 @@ func (m *MockProvider) GetDetails(id string) (*GameMetadata, error) {
 func TestScrapeGame(t *testing.T) {
 	// Setup DB
 	tmpDB := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.Open(tmpDB)
+	database, err := db.Open(context.Background(), tmpDB)
 	assert.NoError(t, err)
 	defer database.Close()
 

@@ -24,7 +24,7 @@ func handleScrapeCommand(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)

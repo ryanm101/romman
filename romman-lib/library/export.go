@@ -10,6 +10,7 @@ import (
 
 	"github.com/ryanm101/romman-lib/tracing"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ReportType defines what data to export.
@@ -135,6 +136,9 @@ func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRec
 	ctx, span := tracing.StartSpan(ctx, "export.getMatched")
 	defer span.End()
 
+	span.AddEvent("query_start", trace.WithAttributes(
+		attribute.String("query_type", "matched"),
+	))
 	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name, sf.path, sf.sha1, m.match_type, COALESCE(m.flags, '')
 		FROM scanned_files sf
@@ -158,6 +162,9 @@ func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRec
 		}
 		records = append(records, rec)
 	}
+	span.AddEvent("processing_complete", trace.WithAttributes(
+		attribute.Int("rows_fetched", len(records)),
+	))
 	return records, nil
 }
 
@@ -193,6 +200,9 @@ func (e *Exporter) getMissing(ctx context.Context, libraryID, systemID int64) ([
 		rec.Status = "missing"
 		records = append(records, rec)
 	}
+	span.AddEvent("processing_complete", trace.WithAttributes(
+		attribute.Int("rows_fetched", len(records)),
+	))
 	return records, nil
 }
 
@@ -220,6 +230,9 @@ func (e *Exporter) getPreferred(ctx context.Context, systemID int64) ([]ExportRe
 		rec.Status = "preferred"
 		records = append(records, rec)
 	}
+	span.AddEvent("processing_complete", trace.WithAttributes(
+		attribute.Int("rows_fetched", len(records)),
+	))
 	return records, nil
 }
 
@@ -227,6 +240,9 @@ func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportR
 	ctx, span := tracing.StartSpan(ctx, "export.getUnmatched")
 	defer span.End()
 
+	span.AddEvent("query_start", trace.WithAttributes(
+		attribute.String("query_type", "unmatched"),
+	))
 	rows, err := e.db.QueryContext(ctx, `
 		SELECT sf.path, sf.sha1
 		FROM scanned_files sf
@@ -250,6 +266,9 @@ func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportR
 		rec.Status = "unmatched"
 		records = append(records, rec)
 	}
+	span.AddEvent("processing_complete", trace.WithAttributes(
+		attribute.Int("rows_fetched", len(records)),
+	))
 	return records, nil
 }
 

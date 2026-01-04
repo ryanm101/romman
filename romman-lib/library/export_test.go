@@ -17,7 +17,7 @@ func setupExportTestDB(t *testing.T) *sql.DB {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 
 	// Caller is responsible for closing via t.Cleanup

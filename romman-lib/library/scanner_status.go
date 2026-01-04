@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/ryanm101/romman-lib/tracing"
 )
 
 // ReleaseStatus represents the status of a release in a library.
@@ -29,6 +31,9 @@ func determineReleaseStatus(matched, total int) string {
 
 // GetLibraryStatus returns the status of all releases for a library's system.
 func (s *Scanner) GetLibraryStatus(ctx context.Context, libraryName string) ([]*ReleaseStatus, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.GetLibraryStatus")
+	defer span.End()
+
 	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
@@ -69,6 +74,9 @@ func (s *Scanner) GetLibraryStatus(ctx context.Context, libraryName string) ([]*
 
 // GetUnmatchedFiles returns files that don't match any known ROM.
 func (s *Scanner) GetUnmatchedFiles(ctx context.Context, libraryName string) ([]string, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.GetUnmatchedFiles")
+	defer span.End()
+
 	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err
@@ -115,6 +123,9 @@ type LibrarySummary struct {
 
 // GetSummary returns a summary for a library.
 func (s *Scanner) GetSummary(ctx context.Context, libraryName string) (*LibrarySummary, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.GetSummary")
+	defer span.End()
+
 	lib, err := s.manager.Get(ctx, libraryName)
 	if err != nil {
 		return nil, err

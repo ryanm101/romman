@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
@@ -18,7 +19,7 @@ type DB struct {
 
 // Open opens or creates a SQLite database at the given path.
 // The connection is instrumented with OpenTelemetry for automatic query tracing.
-func Open(path string) (*DB, error) {
+func Open(ctx context.Context, path string) (*DB, error) {
 	dbName := filepath.Base(path)
 
 	// Use otelsql to wrap the database connection with tracing
@@ -43,25 +44,25 @@ func Open(path string) (*DB, error) {
 	))
 
 	// Enable WAL mode for better concurrent access
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err := conn.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
 	}
 
 	// Set busy timeout to 30 seconds to wait for locks instead of failing immediately
-	if _, err := conn.Exec("PRAGMA busy_timeout=30000"); err != nil {
+	if _, err := conn.ExecContext(ctx, "PRAGMA busy_timeout=30000"); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
 	}
 
 	// Enable foreign keys
-	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
 	db := &DB{conn: conn, path: path}
-	if err := db.migrate(); err != nil {
+	if err := db.migrate(ctx); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
@@ -80,9 +81,9 @@ func (db *DB) Conn() *sql.DB {
 }
 
 // migrate runs database migrations up to the current schema version.
-func (db *DB) migrate() error {
+func (db *DB) migrate(ctx context.Context) error {
 	// Create schema version table if not exists
-	if _, err := db.conn.Exec(`
+	if _, err := db.conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_version (
 			version INTEGER PRIMARY KEY
 		)
@@ -92,54 +93,54 @@ func (db *DB) migrate() error {
 
 	// Get current version
 	var version int
-	err := db.conn.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&version)
+	err := db.conn.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&version)
 	if err != nil {
 		return fmt.Errorf("failed to get schema version: %w", err)
 	}
 
 	// Run migrations
 	if version < 1 {
-		if err := db.migrateV1(); err != nil {
+		if err := db.migrateV1(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 2 {
-		if err := db.migrateV2(); err != nil {
+		if err := db.migrateV2(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 3 {
-		if err := db.migrateV3(); err != nil {
+		if err := db.migrateV3(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 4 {
-		if err := db.migrateV4(); err != nil {
+		if err := db.migrateV4(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 5 {
-		if err := db.migrateV5(); err != nil {
+		if err := db.migrateV5(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 6 {
-		if err := db.migrateV6(); err != nil {
+		if err := db.migrateV6(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 7 {
-		if err := db.migrateV7(); err != nil {
+		if err := db.migrateV7(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 8 {
-		if err := db.migrateV8(); err != nil {
+		if err := db.migrateV8(ctx); err != nil {
 			return err
 		}
 	}
 	if version < 9 {
-		if err := db.migrateV9(); err != nil {
+		if err := db.migrateV9(ctx); err != nil {
 			return err
 		}
 	}
@@ -150,7 +151,7 @@ func (db *DB) migrate() error {
 // ... existing migrations ...
 
 // migrateV5 adds metadata and media tables.
-func (db *DB) migrateV5() error {
+func (db *DB) migrateV5(ctx context.Context) error {
 	schema := `
 		-- Game metadata (scraped)
 		CREATE TABLE IF NOT EXISTS game_metadata (
@@ -179,7 +180,7 @@ func (db *DB) migrateV5() error {
 		INSERT INTO schema_version (version) VALUES (5);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v5 migration: %w", err)
 	}
 
@@ -187,7 +188,7 @@ func (db *DB) migrateV5() error {
 }
 
 // migrateV1 creates the initial schema.
-func (db *DB) migrateV1() error {
+func (db *DB) migrateV1(ctx context.Context) error {
 	schema := `
 		CREATE TABLE IF NOT EXISTS systems (
 			id INTEGER PRIMARY KEY,
@@ -228,7 +229,7 @@ func (db *DB) migrateV1() error {
 		INSERT INTO schema_version (version) VALUES (1);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v1 migration: %w", err)
 	}
 
@@ -236,7 +237,7 @@ func (db *DB) migrateV1() error {
 }
 
 // migrateV2 adds library scanning tables.
-func (db *DB) migrateV2() error {
+func (db *DB) migrateV2(ctx context.Context) error {
 	schema := `
 		-- Libraries represent ROM collection directories
 		CREATE TABLE IF NOT EXISTS libraries (
@@ -287,7 +288,7 @@ func (db *DB) migrateV2() error {
 		INSERT INTO schema_version (version) VALUES (2);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v2 migration: %w", err)
 	}
 
@@ -295,14 +296,14 @@ func (db *DB) migrateV2() error {
 }
 
 // migrateV3 adds flags column to matches for storing ROM status.
-func (db *DB) migrateV3() error {
+func (db *DB) migrateV3(ctx context.Context) error {
 	schema := `
 		ALTER TABLE matches ADD COLUMN flags TEXT;
 
 		INSERT INTO schema_version (version) VALUES (3);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v3 migration: %w", err)
 	}
 
@@ -310,7 +311,7 @@ func (db *DB) migrateV3() error {
 }
 
 // migrateV4 adds preferred release tracking.
-func (db *DB) migrateV4() error {
+func (db *DB) migrateV4(ctx context.Context) error {
 	schema := `
 		ALTER TABLE releases ADD COLUMN is_preferred INTEGER DEFAULT 0;
 		ALTER TABLE releases ADD COLUMN ignore_reason TEXT;
@@ -320,7 +321,7 @@ func (db *DB) migrateV4() error {
 		INSERT INTO schema_version (version) VALUES (4);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v4 migration: %w", err)
 	}
 
@@ -328,7 +329,7 @@ func (db *DB) migrateV4() error {
 }
 
 // migrateV6 adds parent/clone support.
-func (db *DB) migrateV6() error {
+func (db *DB) migrateV6(ctx context.Context) error {
 	schema := `
 		ALTER TABLE releases ADD COLUMN clone_of TEXT;
 		ALTER TABLE releases ADD COLUMN parent_id INTEGER REFERENCES releases(id) ON DELETE SET NULL;
@@ -338,7 +339,7 @@ func (db *DB) migrateV6() error {
 		INSERT INTO schema_version (version) VALUES (6);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v6 migration: %w", err)
 	}
 
@@ -346,7 +347,7 @@ func (db *DB) migrateV6() error {
 }
 
 // migrateV7 adds multi-DAT source support.
-func (db *DB) migrateV7() error {
+func (db *DB) migrateV7(ctx context.Context) error {
 	schema := `
 		-- Track multiple DAT sources per system
 		CREATE TABLE IF NOT EXISTS dat_sources (
@@ -371,7 +372,7 @@ func (db *DB) migrateV7() error {
 		INSERT INTO schema_version (version) VALUES (7);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v7 migration: %w", err)
 	}
 
@@ -379,7 +380,7 @@ func (db *DB) migrateV7() error {
 }
 
 // migrateV8 adds MAME-specific metadata to releases.
-func (db *DB) migrateV8() error {
+func (db *DB) migrateV8(ctx context.Context) error {
 	schema := `
 		-- Add MAME metadata columns to releases
 		ALTER TABLE releases ADD COLUMN year TEXT;
@@ -391,7 +392,7 @@ func (db *DB) migrateV8() error {
 		INSERT INTO schema_version (version) VALUES (8);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v8 migration: %w", err)
 	}
 
@@ -399,7 +400,7 @@ func (db *DB) migrateV8() error {
 }
 
 // migrateV9 adds performance indexes.
-func (db *DB) migrateV9() error {
+func (db *DB) migrateV9(ctx context.Context) error {
 	schema := `
 		-- Performance indexes for common query patterns
 		CREATE INDEX IF NOT EXISTS idx_releases_system_name ON releases(system_id, name);
@@ -411,7 +412,7 @@ func (db *DB) migrateV9() error {
 		INSERT INTO schema_version (version) VALUES (9);
 	`
 
-	if _, err := db.conn.Exec(schema); err != nil {
+	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to execute v9 migration: %w", err)
 	}
 

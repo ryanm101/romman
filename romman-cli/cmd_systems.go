@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/ryanm101/romman-lib/dat"
 )
 
-func handleSystemsCommand(args []string) {
+func handleSystemsCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman systems <command>")
 		os.Exit(1)
@@ -15,23 +16,23 @@ func handleSystemsCommand(args []string) {
 
 	switch args[0] {
 	case "list":
-		listSystems()
+		listSystems(ctx)
 	case "info":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman systems info <name>")
 			os.Exit(1)
 		}
-		showSystemInfo(args[1])
+		showSystemInfo(ctx, args[1])
 	case "status":
-		showSystemsStatus()
+		showSystemsStatus(ctx)
 	default:
 		fmt.Printf("Unknown systems command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func listSystems() {
-	database, err := openDB()
+func listSystems(ctx context.Context) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -75,8 +76,8 @@ func listSystems() {
 	}
 }
 
-func showSystemInfo(name string) {
-	database, err := openDB()
+func showSystemInfo(ctx context.Context, name string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -140,8 +141,8 @@ func showSystemInfo(name string) {
 	}
 }
 
-func showSystemsStatus() {
-	database, err := openDB()
+func showSystemsStatus(ctx context.Context) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 )
 
-func handleDoctorCommand(_ []string) {
-	database, err := openDB()
+func handleDoctorCommand(ctx context.Context, args []string) {
+	fmt.Println("Running database health checks...")
+	database, err := openDB(ctx)
 	if err != nil {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)

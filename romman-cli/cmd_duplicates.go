@@ -9,7 +9,7 @@ import (
 	"github.com/ryanm101/romman-lib/library"
 )
 
-func handleDuplicatesCommand(args []string) {
+func handleDuplicatesCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman duplicates <command>")
 		os.Exit(1)
@@ -21,15 +21,15 @@ func handleDuplicatesCommand(args []string) {
 			fmt.Println("Usage: romman duplicates list <library>")
 			os.Exit(1)
 		}
-		listDuplicates(args[1])
+		listDuplicates(ctx, args[1])
 	default:
 		fmt.Printf("Unknown duplicates command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func listDuplicates(libraryName string) {
-	database, err := openDB()
+func listDuplicates(ctx context.Context, libName string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -37,7 +37,7 @@ func listDuplicates(libraryName string) {
 	defer func() { _ = database.Close() }()
 
 	manager := library.NewManager(database.Conn())
-	lib, err := manager.Get(context.Background(), libraryName)
+	lib, err := manager.Get(context.Background(), libName)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

@@ -8,7 +8,7 @@ import (
 	"github.com/ryanm101/romman-lib/library"
 )
 
-func handleExportCommand(args []string) {
+func handleExportCommand(ctx context.Context, args []string) {
 	if len(args) < 3 {
 		fmt.Println("Usage: romman export <library> <report> <format> [file]")
 		fmt.Println("       romman export <library> retroarch <output.lpl>")
@@ -16,7 +16,7 @@ func handleExportCommand(args []string) {
 		os.Exit(1)
 	}
 
-	libraryName := args[0]
+	libName := args[0]
 	reportOrFormat := args[1]
 
 	if reportOrFormat == "retroarch" {
@@ -25,7 +25,7 @@ func handleExportCommand(args []string) {
 			os.Exit(1)
 		}
 		outputPath := args[2]
-		exportRetroArch(libraryName, outputPath)
+		exportRetroArch(ctx, libName, outputPath)
 		return
 	}
 
@@ -36,7 +36,7 @@ func handleExportCommand(args []string) {
 		}
 		outputPath := args[2]
 		matchedOnly := len(args) > 3 && args[3] == "--matched-only"
-		exportGamelist(libraryName, outputPath, matchedOnly)
+		exportGamelist(ctx, libName, outputPath, matchedOnly)
 		return
 	}
 
@@ -47,37 +47,48 @@ func handleExportCommand(args []string) {
 		}
 		outputPath := args[2]
 		matchedOnly := len(args) > 3 && args[3] == "--matched-only"
-		exportLaunchBox(libraryName, outputPath, matchedOnly)
+		exportLaunchBox(ctx, libName, outputPath, matchedOnly)
 		return
 	}
 
+	// Generic report export
 	if len(args) < 3 {
 		fmt.Println("Usage: romman export <library> <report> <format> [file]")
 		os.Exit(1)
 	}
 
-	reportType := library.ReportType(args[1])
-	format := library.ExportFormat(args[2])
+	report := args[1]
+	format := args[2]
+	output := ""
+	if len(args) >= 4 {
+		output = args[3]
+	}
+	exportReport(ctx, libName, report, format, output)
+}
+
+func exportReport(ctx context.Context, libName, report, format, output string) {
+	reportType := library.ReportType(report)
+	exportFormat := library.ExportFormat(format)
 
 	switch reportType {
 	case library.ReportMatched, library.ReportMissing, library.ReportPreferred, library.ReportUnmatched, library.Report1G1R, library.ReportStats, library.ReportDuplicates, library.ReportMismatch:
 		// valid
 	default:
-		_, _ = fmt.Fprintf(os.Stderr, "Unknown report type: %s\n", args[1])
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown report type: %s\n", report)
 		fmt.Println("Valid reports: matched, missing, preferred, unmatched, 1g1r, stats, duplicates, mismatch")
 		os.Exit(1)
 	}
 
-	switch format {
+	switch exportFormat {
 	case library.FormatCSV, library.FormatJSON, library.FormatTXT:
 		// valid
 	default:
-		_, _ = fmt.Fprintf(os.Stderr, "Unknown format: %s\n", args[2])
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown format: %s\n", format)
 		fmt.Println("Valid formats: csv, json, txt")
 		os.Exit(1)
 	}
 
-	database, err := openDB()
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -87,40 +98,39 @@ func handleExportCommand(args []string) {
 	manager := library.NewManager(database.Conn())
 	exporter := library.NewExporter(database.Conn(), manager)
 
-	data, err := exporter.Export(context.Background(), libraryName, reportType, format)
+	data, err := exporter.Export(context.Background(), libName, reportType, exportFormat)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error exporting: %v\n", err)
 		os.Exit(1)
 	}
 
-	if len(args) >= 4 {
-		outputFile := args[3]
+	if output != "" {
 		// #nosec G306
-		if err := os.WriteFile(outputFile, data, 0644); err != nil {
+		if err := os.WriteFile(output, data, 0644); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 			os.Exit(1)
 		}
 
 		if outputCfg.JSON {
 			PrintResult(map[string]interface{}{
-				"library": libraryName,
+				"library": libName,
 				"report":  reportType,
-				"format":  format,
-				"output":  outputFile,
+				"format":  exportFormat,
+				"output":  output,
 				"status":  "success",
 			})
 		} else {
-			fmt.Printf("Exported %s %s to %s\n", reportType, format, outputFile)
+			fmt.Printf("Exported %s %s to %s\n", reportType, exportFormat, output)
 		}
 	} else {
-		if format == library.FormatJSON && outputCfg.JSON {
+		if exportFormat == library.FormatJSON && outputCfg.JSON {
 			// Already JSON, just print it
 			fmt.Print(string(data))
 		} else if outputCfg.JSON {
 			PrintResult(map[string]interface{}{
-				"library": libraryName,
+				"library": libName,
 				"report":  reportType,
-				"format":  format,
+				"format":  exportFormat,
 				"data":    string(data),
 			})
 		} else {
@@ -129,8 +139,8 @@ func handleExportCommand(args []string) {
 	}
 }
 
-func exportRetroArch(libraryName, outputPath string) {
-	database, err := openDB()
+func exportRetroArch(ctx context.Context, libraryName, outputPath string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -155,8 +165,8 @@ func exportRetroArch(libraryName, outputPath string) {
 	}
 }
 
-func exportGamelist(libraryName, outputPath string, matchedOnly bool) {
-	database, err := openDB()
+func exportGamelist(ctx context.Context, libraryName, outputPath string, matchedOnly bool) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -196,8 +206,8 @@ func exportGamelist(libraryName, outputPath string, matchedOnly bool) {
 	}
 }
 
-func exportLaunchBox(libraryName, outputPath string, matchedOnly bool) {
-	database, err := openDB()
+func exportLaunchBox(ctx context.Context, libraryName, outputPath string, matchedOnly bool) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

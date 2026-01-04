@@ -41,7 +41,7 @@ func TestImporter_Import(t *testing.T) {
 
 	// Create test database
 	dbPath := filepath.Join(tmpDir, "test.db")
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 
@@ -91,7 +91,7 @@ func TestImporter_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 
@@ -138,7 +138,7 @@ func TestImporter_Clones(t *testing.T) {
 	require.NoError(t, err)
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	database, err := db.Open(dbPath)
+	database, err := db.Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = database.Close() }()
 

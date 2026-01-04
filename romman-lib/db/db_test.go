@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ func TestOpen(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err, "should open database without error")
 	defer func() { _ = db.Close() }()
 
@@ -26,7 +27,7 @@ func TestSchemaVersion(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -40,7 +41,7 @@ func TestTablesExist(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -66,13 +67,13 @@ func TestMigrationIdempotent(t *testing.T) {
 
 	// Open and close multiple times
 	for i := 0; i < 3; i++ {
-		db, err := Open(dbPath)
+		db, err := Open(context.Background(), dbPath)
 		require.NoError(t, err, "should open database on attempt %d", i+1)
 		_ = db.Close()
 	}
 
 	// Verify schema version is still 6
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -86,7 +87,7 @@ func TestV6Columns(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -112,7 +113,7 @@ func TestV7DATSourcesTable(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -138,7 +139,7 @@ func TestV8MAMEColumns(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -168,7 +169,7 @@ func TestV9Indexes(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -194,7 +195,7 @@ func TestClose(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 
 	err = db.Close()
@@ -209,7 +210,7 @@ func TestDBConn(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db, err := Open(dbPath)
+	db, err := Open(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 

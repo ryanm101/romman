@@ -18,10 +18,10 @@ func handleDatCommand(ctx context.Context, args []string) {
 	switch args[0] {
 	case "import":
 		if len(args) < 2 {
-			fmt.Println("Usage: romman dat import <file> [file...]")
+			fmt.Println("Usage: romman dat import <file>")
 			os.Exit(1)
 		}
-		importDATs(ctx, args[1:])
+		importDat(ctx, args[1])
 	case "scan":
 		scanDatDir(ctx)
 	default:
@@ -30,8 +30,8 @@ func handleDatCommand(ctx context.Context, args []string) {
 	}
 }
 
-func importDATs(ctx context.Context, paths []string) {
-	database, err := openDB()
+func importDat(ctx context.Context, inputPath string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -40,7 +40,8 @@ func importDATs(ctx context.Context, paths []string) {
 
 	importer := dat.NewImporter(database.Conn())
 
-	results := make([]*dat.ImportResult, 0, len(os.Args)) // Best effort pre-alloc
+	paths := []string{inputPath}
+	results := make([]*dat.ImportResult, 0, len(paths))
 	for _, path := range paths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -82,7 +83,7 @@ func scanDatDir(ctx context.Context) {
 		os.Exit(1)
 	}
 
-	database, err := openDB()
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-func handleBackupCommand(args []string) {
+func handleBackupCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman backup <destination>")
 		fmt.Println("  Creates a timestamped backup of the database")

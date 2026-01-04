@@ -9,7 +9,7 @@ import (
 	"github.com/ryanm101/romman-lib/library"
 )
 
-func handleCleanupCommand(args []string) {
+func handleCleanupCommand(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: romman cleanup <command>")
 		os.Exit(1)
@@ -21,22 +21,22 @@ func handleCleanupCommand(args []string) {
 			fmt.Println("Usage: romman cleanup plan <library> <quarantine-dir>")
 			os.Exit(1)
 		}
-		generateCleanupPlan(args[1], args[2])
+		generateCleanupPlan(ctx, args[1], args[2])
 	case "exec":
 		if len(args) < 2 {
 			fmt.Println("Usage: romman cleanup exec <plan-file> [--dry-run]")
 			os.Exit(1)
 		}
-		dryRun := len(args) >= 3 && args[2] == "--dry-run"
-		executeCleanupPlan(args[1], dryRun)
+		dryRun := len(args) > 2 && args[2] == "--dry-run"
+		executeCleanupPlan(ctx, args[1], dryRun)
 	default:
 		fmt.Printf("Unknown cleanup command: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func generateCleanupPlan(libraryName, quarantineDir string) {
-	database, err := openDB()
+func generateCleanupPlan(ctx context.Context, libraryName, quarantineDir string) {
+	database, err := openDB(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -82,7 +82,7 @@ func generateCleanupPlan(libraryName, quarantineDir string) {
 	fmt.Printf("To execute: romman cleanup exec %s [--dry-run]\n", planFile)
 }
 
-func executeCleanupPlan(planFile string, dryRun bool) {
+func executeCleanupPlan(ctx context.Context, planFile string, dryRun bool) {
 	plan, err := library.LoadPlan(planFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error loading plan: %v\n", err)

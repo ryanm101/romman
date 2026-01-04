@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -13,11 +14,14 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"github.com/ryanm101/romman-lib/config"
 	"github.com/ryanm101/romman-lib/db"
 	"github.com/ryanm101/romman-lib/library"
 	"github.com/ryanm101/romman-lib/metrics"
 	"github.com/ryanm101/romman-lib/pack"
+	"github.com/ryanm101/romman-lib/tracing"
 )
 
 //go:embed assets/*
@@ -30,7 +34,10 @@ func main() {
 		cfg = config.DefaultConfig()
 	}
 
-	database, err := db.Open(cfg.GetDBPath())
+	// Setup Tracing context early for database operations
+	ctx := context.Background()
+
+	database, err := db.Open(ctx, cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -43,12 +50,33 @@ func main() {
 		port = "8080"
 	}
 
+	// Setup Tracing
+	shutdown, err := tracing.Setup(ctx, tracing.Config{
+		Enabled:  os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "",
+		Endpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+	})
+	if err != nil {
+		log.Printf("Warning: failed to setup tracing: %v", err)
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			log.Printf("Error shutting down tracer: %v", err)
+		}
+	}()
+
 	fmt.Printf("🌐 ROM Manager Web UI\n")
 	fmt.Printf("   http://localhost:%s\n\n", port)
 
+	// Wrap handler with otelhttp
+	handler := otelhttp.NewHandler(server, "romman-web",
+		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		}),
+	)
+
 	srv := &http.Server{
 		Addr:         ":" + port,
-		Handler:      server,
+		Handler:      handler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -98,12 +126,12 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/", s.handleDashboard)
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	var systems, libraries, releases int
 
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM systems").Scan(&systems)
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM libraries").Scan(&libraries)
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM releases").Scan(&releases)
+	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM systems").Scan(&systems)
+	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM libraries").Scan(&libraries)
+	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM releases").Scan(&releases)
 
 	data := map[string]int{
 		"totalSystems":   systems,
@@ -115,8 +143,8 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func (s *Server) handleSystems(w http.ResponseWriter, _ *http.Request) {
-	rows, err := s.db.Query(`
+func (s *Server) handleSystems(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT s.name, COUNT(r.id) as releases,
 			COUNT(CASE WHEN r.is_preferred = 1 THEN 1 END) as preferred
 		FROM systems s
@@ -147,9 +175,9 @@ func (s *Server) handleSystems(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"systems": systems})
 }
 
-func (s *Server) handleLibraries(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleLibraries(w http.ResponseWriter, r *http.Request) {
 	// Get library info
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT l.id, l.name, s.name as system,
 			(SELECT COUNT(*) FROM releases WHERE system_id = l.system_id) as total
 		FROM libraries l
@@ -180,7 +208,7 @@ func (s *Server) handleLibraries(w http.ResponseWriter, _ *http.Request) {
 
 	// Get matched counts per library (separate query is faster)
 	for i := range libList {
-		_ = s.db.QueryRow(`
+		_ = s.db.QueryRowContext(r.Context(), `
 			SELECT COUNT(DISTINCT re.release_id)
 			FROM scanned_files sf
 			JOIN matches m ON m.scanned_file_id = sf.id
@@ -243,7 +271,7 @@ func (s *Server) handleScanAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all libraries for this system
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT l.name FROM libraries l
 		JOIN systems s ON s.id = l.system_id
 		WHERE s.name = ?
@@ -293,7 +321,7 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	var matched, missing, flagged, unmatched, preferred int
 
 	// Matched count
-	_ = s.db.QueryRow(`
+	_ = s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(DISTINCT r.id)
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -304,7 +332,7 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	`, libName).Scan(&matched)
 
 	// Missing count
-	_ = s.db.QueryRow(`
+	_ = s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(*)
 		FROM releases r
 		JOIN libraries l ON l.system_id = r.system_id
@@ -319,7 +347,7 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	`, libName).Scan(&missing)
 
 	// Flagged count
-	_ = s.db.QueryRow(`
+	_ = s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(DISTINCT r.id)
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -330,7 +358,7 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	`, libName).Scan(&flagged)
 
 	// Unmatched count
-	_ = s.db.QueryRow(`
+	_ = s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(*)
 		FROM scanned_files sf
 		JOIN libraries l ON l.id = sf.library_id
@@ -339,7 +367,7 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	`, libName).Scan(&unmatched)
 
 	// Preferred count
-	_ = s.db.QueryRow(`
+	_ = s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(*)
 		FROM releases r
 		JOIN libraries l ON l.system_id = r.system_id
@@ -368,7 +396,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 
 	switch filter {
 	case "matched":
-		rows, err := s.db.Query(`
+		rows, err := s.db.QueryContext(r.Context(), `
 			SELECT r.name, sf.path, m.match_type, COALESCE(m.flags, ''),
 				COALESCE(gm.local_path, ''), COALESCE(gmd.description, '')
 			FROM scanned_files sf
@@ -401,7 +429,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "missing":
-		rows, err := s.db.Query(`
+		rows, err := s.db.QueryContext(r.Context(), `
 			SELECT r.name
 			FROM releases r
 			JOIN libraries l ON l.system_id = r.system_id
@@ -424,7 +452,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "flagged":
-		rows, err := s.db.Query(`
+		rows, err := s.db.QueryContext(r.Context(), `
 			SELECT r.name, sf.path, m.match_type, m.flags
 			FROM scanned_files sf
 			JOIN matches m ON m.scanned_file_id = sf.id
@@ -443,7 +471,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "unmatched":
-		rows, err := s.db.Query(`
+		rows, err := s.db.QueryContext(r.Context(), `
 			SELECT sf.path
 			FROM scanned_files sf
 			JOIN libraries l ON l.id = sf.library_id
@@ -460,7 +488,7 @@ func (s *Server) handleDetails(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "preferred":
-		rows, err := s.db.Query(`
+		rows, err := s.db.QueryContext(r.Context(), `
 			SELECT r.name, 
 				COALESCE((SELECT sf.path FROM scanned_files sf 
 						  JOIN matches m ON m.scanned_file_id = sf.id 
@@ -546,9 +574,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handlePackGames returns games available for packing, grouped by system.
-func (s *Server) handlePackGames(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handlePackGames(w http.ResponseWriter, r *http.Request) {
 	// Query matched games with file paths
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT 
 			s.name as system_id,
 			COALESCE(s.dat_name, s.name) as system_name,
@@ -646,7 +674,7 @@ func (s *Server) handlePackGenerate(w http.ResponseWriter, r *http.Request) {
 	games := make([]pack.Game, 0, len(req.GameIDs))
 	for _, id := range req.GameIDs {
 		var game pack.Game
-		err := s.db.QueryRow(`
+		err := s.db.QueryRowContext(r.Context(), `
 			SELECT 
 				r.id, r.name, s.name, COALESCE(s.dat_name, s.name),
 				sf.path, COALESCE(re.name, 'rom.bin'), sf.size
