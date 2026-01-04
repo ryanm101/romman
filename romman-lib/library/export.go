@@ -135,7 +135,7 @@ func (e *Exporter) getMatched(ctx context.Context, libraryID int64) ([]ExportRec
 	_, span := tracing.StartSpan(ctx, "export.getMatched")
 	defer span.End()
 
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name, sf.path, sf.sha1, m.match_type, COALESCE(m.flags, '')
 		FROM scanned_files sf
 		JOIN matches m ON m.scanned_file_id = sf.id
@@ -165,7 +165,7 @@ func (e *Exporter) getMissing(ctx context.Context, libraryID, systemID int64) ([
 	_, span := tracing.StartSpan(ctx, "export.getMissing")
 	defer span.End()
 
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT r.name
 		FROM releases r
 		WHERE r.system_id = ?
@@ -200,7 +200,7 @@ func (e *Exporter) getPreferred(ctx context.Context, systemID int64) ([]ExportRe
 	_, span := tracing.StartSpan(ctx, "export.getPreferred")
 	defer span.End()
 
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT name FROM releases
 		WHERE system_id = ? AND is_preferred = 1
 		ORDER BY name
@@ -227,7 +227,7 @@ func (e *Exporter) getUnmatched(ctx context.Context, libraryID int64) ([]ExportR
 	_, span := tracing.StartSpan(ctx, "export.getUnmatched")
 	defer span.End()
 
-	rows, err := e.db.Query(`
+	rows, err := e.db.QueryContext(ctx, `
 		SELECT sf.path, sf.sha1
 		FROM scanned_files sf
 		LEFT JOIN matches m ON m.scanned_file_id = sf.id
