@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func listDuplicates(libraryName string) {
 	}
 
 	finder := library.NewDuplicateFinder(database.Conn())
-	duplicates, err := finder.FindAllDuplicates(lib.ID)
+	duplicates, err := finder.FindAllDuplicates(context.Background(), lib.ID)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error finding duplicates: %v\n", err)
 		os.Exit(1)

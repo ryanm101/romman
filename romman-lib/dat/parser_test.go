@@ -158,3 +158,113 @@ func TestParseFile_NotFound(t *testing.T) {
 	_, err := ParseFile("/nonexistent/path.dat")
 	assert.Error(t, err)
 }
+
+func TestParse_MAMEAttributes(t *testing.T) {
+	// Test MAME-specific attributes
+	datXML := `<?xml version="1.0"?>
+<datafile>
+	<header><name>MAME</name></header>
+	<machine name="pacman" isbios="no" isdevice="no" ismechanical="no" runnable="yes" sourcefile="pacman.cpp">
+		<description>Pac-Man</description>
+		<year>1980</year>
+		<manufacturer>Namco</manufacturer>
+		<rom name="pacman.6e" size="4096" crc="c1e6ab10"/>
+	</machine>
+</datafile>`
+
+	dat, err := Parse(strings.NewReader(datXML))
+	require.NoError(t, err)
+
+	require.Len(t, dat.Games, 1)
+	game := dat.Games[0]
+
+	assert.Equal(t, "pacman", game.Name)
+	assert.Equal(t, "Pac-Man", game.Description)
+	assert.Equal(t, "1980", game.Year)
+	assert.Equal(t, "Namco", game.Manufacturer)
+	assert.Equal(t, "no", game.IsBIOS)
+	assert.Equal(t, "no", game.IsDevice)
+	assert.Equal(t, "no", game.IsMech)
+	assert.Equal(t, "yes", game.Runnable)
+	assert.Equal(t, "pacman.cpp", game.SourceFile)
+}
+
+func TestParse_MAMEBIOSEntry(t *testing.T) {
+	datXML := `<?xml version="1.0"?>
+<datafile>
+	<header><name>MAME</name></header>
+	<machine name="neogeo" isbios="yes" isdevice="no">
+		<description>Neo-Geo</description>
+		<year>1990</year>
+		<manufacturer>SNK</manufacturer>
+		<rom name="sp-s2.sp1" size="131072" crc="9036d879"/>
+	</machine>
+</datafile>`
+
+	dat, err := Parse(strings.NewReader(datXML))
+	require.NoError(t, err)
+
+	require.Len(t, dat.Games, 1)
+	assert.Equal(t, "yes", dat.Games[0].IsBIOS)
+	assert.Equal(t, "no", dat.Games[0].IsDevice)
+}
+
+func TestParse_MAMEDeviceEntry(t *testing.T) {
+	datXML := `<?xml version="1.0"?>
+<datafile>
+	<header><name>MAME</name></header>
+	<machine name="z80" isdevice="yes" isbios="no">
+		<description>Zilog Z80</description>
+	</machine>
+</datafile>`
+
+	dat, err := Parse(strings.NewReader(datXML))
+	require.NoError(t, err)
+
+	require.Len(t, dat.Games, 1)
+	assert.Equal(t, "yes", dat.Games[0].IsDevice)
+	assert.Equal(t, "no", dat.Games[0].IsBIOS)
+}
+
+func TestParse_MAMEClone(t *testing.T) {
+	datXML := `<?xml version="1.0"?>
+<datafile>
+	<header><name>MAME</name></header>
+	<machine name="pacman" isbios="no">
+		<description>Pac-Man</description>
+	</machine>
+	<machine name="puckman" cloneof="pacman" romof="pacman" isbios="no">
+		<description>Puck Man</description>
+	</machine>
+</datafile>`
+
+	dat, err := Parse(strings.NewReader(datXML))
+	require.NoError(t, err)
+
+	require.Len(t, dat.Games, 2)
+
+	// Parent
+	assert.Equal(t, "pacman", dat.Games[0].Name)
+	assert.Empty(t, dat.Games[0].CloneOf)
+
+	// Clone
+	assert.Equal(t, "puckman", dat.Games[1].Name)
+	assert.Equal(t, "pacman", dat.Games[1].CloneOf)
+	assert.Equal(t, "pacman", dat.Games[1].RomOf)
+}
+
+func TestParse_MAMESampleOf(t *testing.T) {
+	datXML := `<?xml version="1.0"?>
+<datafile>
+	<header><name>MAME</name></header>
+	<machine name="donkeykong" sampleof="dkong">
+		<description>Donkey Kong</description>
+	</machine>
+</datafile>`
+
+	dat, err := Parse(strings.NewReader(datXML))
+	require.NoError(t, err)
+
+	require.Len(t, dat.Games, 1)
+	assert.Equal(t, "dkong", dat.Games[0].SampleOf)
+}

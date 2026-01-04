@@ -1,11 +1,15 @@
 package library
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ActionType represents what to do with a file.
@@ -80,14 +84,24 @@ func NewCleanupPlanner(finder *DuplicateFinder, manager *Manager) *CleanupPlanne
 }
 
 // GeneratePlan creates a cleanup plan for a library's duplicates.
-func (p *CleanupPlanner) GeneratePlan(libraryName string, quarantineBase string) (*CleanupPlan, error) {
+func (p *CleanupPlanner) GeneratePlan(ctx context.Context, libraryName string, quarantineBase string) (*CleanupPlan, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.CleanupPlan",
+		tracing.WithAttributes(
+			attribute.String("library.name", libraryName),
+			attribute.String("quarantine.base", quarantineBase),
+		),
+	)
+	defer span.End()
+
 	lib, err := p.manager.Get(libraryName)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 
-	duplicates, err := p.finder.FindAllDuplicates(lib.ID)
+	duplicates, err := p.finder.FindAllDuplicates(ctx, lib.ID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 
@@ -167,6 +181,12 @@ func (p *CleanupPlanner) GeneratePlan(libraryName string, quarantineBase string)
 
 	plan.Summary.TotalActions = len(plan.Actions)
 	plan.Summary.SpaceReclaimed = totalSpace
+
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.total_actions", plan.Summary.TotalActions),
+		attribute.Int("result.move_count", plan.Summary.MoveCount),
+		attribute.Int64("result.space_reclaimed", plan.Summary.SpaceReclaimed),
+	)
 
 	return plan, nil
 }

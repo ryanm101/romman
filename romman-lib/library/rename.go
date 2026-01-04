@@ -1,11 +1,15 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // RenameAction represents a single file rename operation.
@@ -37,9 +41,18 @@ func NewRenamer(db *sql.DB, manager *Manager) *Renamer {
 }
 
 // Rename renames files in a library to match their DAT entry names.
-func (r *Renamer) Rename(libraryName string, dryRun bool) (*RenameResult, error) {
+func (r *Renamer) Rename(ctx context.Context, libraryName string, dryRun bool) (*RenameResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.Rename",
+		tracing.WithAttributes(
+			attribute.String("library.name", libraryName),
+			attribute.Bool("dry_run", dryRun),
+		),
+	)
+	defer span.End()
+
 	lib, err := r.manager.Get(libraryName)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 
@@ -135,6 +148,13 @@ func (r *Renamer) Rename(libraryName string, dryRun bool) (*RenameResult, error)
 		}
 		result.Actions = append(result.Actions, action)
 	}
+
+	// Record results
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.renamed", result.Renamed),
+		attribute.Int("result.skipped", result.Skipped),
+		attribute.Int("result.errors", result.Errors),
+	)
 
 	return result, nil
 }

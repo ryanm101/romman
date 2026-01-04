@@ -1,9 +1,13 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
+
+	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // DuplicateType represents the kind of duplicate found.
@@ -193,26 +197,41 @@ func (d *DuplicateFinder) FindPackagingDuplicates(libraryID int64) ([]Duplicate,
 }
 
 // FindAllDuplicates finds all types of duplicates in a library.
-func (d *DuplicateFinder) FindAllDuplicates(libraryID int64) ([]Duplicate, error) {
+func (d *DuplicateFinder) FindAllDuplicates(ctx context.Context, libraryID int64) ([]Duplicate, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.FindDuplicates",
+		tracing.WithAttributes(attribute.Int64("library.id", libraryID)),
+	)
+	defer span.End()
+
 	var all []Duplicate
 
 	exact, err := d.FindExactDuplicates(libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("exact duplicates: %w", err)
 	}
 	all = append(all, exact...)
 
 	variants, err := d.FindVariantDuplicates(libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("variant duplicates: %w", err)
 	}
 	all = append(all, variants...)
 
 	packaging, err := d.FindPackagingDuplicates(libraryID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("packaging duplicates: %w", err)
 	}
 	all = append(all, packaging...)
+
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.exact_count", len(exact)),
+		attribute.Int("result.variant_count", len(variants)),
+		attribute.Int("result.packaging_count", len(packaging)),
+		attribute.Int("result.total_count", len(all)),
+	)
 
 	return all, nil
 }

@@ -1,11 +1,15 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // PreferenceConfig holds user preferences for release selection.
@@ -71,10 +75,16 @@ func NewPreferenceSelector(db *sql.DB, config PreferenceConfig) *PreferenceSelec
 }
 
 // SelectPreferred runs the selection algorithm for a system.
-func (p *PreferenceSelector) SelectPreferred(systemID int64) error {
+func (p *PreferenceSelector) SelectPreferred(ctx context.Context, systemID int64) error {
+	ctx, span := tracing.StartSpan(ctx, "library.SelectPreferred",
+		tracing.WithAttributes(attribute.Int64("system.id", systemID)),
+	)
+	defer span.End()
+
 	// Get all releases for the system
 	releases, err := p.getReleases(systemID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return fmt.Errorf("failed to get releases: %w", err)
 	}
 
@@ -85,16 +95,29 @@ func (p *PreferenceSelector) SelectPreferred(systemID int64) error {
 	}
 
 	// Select preferred for each group
+	var preferredCount int
 	for _, candidates := range groups {
 		p.selectFromGroup(candidates)
+		for _, c := range candidates {
+			if c.IsPreferred {
+				preferredCount++
+			}
+		}
 	}
 
 	// Update database
 	for _, r := range releases {
 		if err := p.updateRelease(r); err != nil {
+			tracing.RecordError(span, err)
 			return fmt.Errorf("failed to update release %d: %w", r.ReleaseID, err)
 		}
 	}
+
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.releases", len(releases)),
+		attribute.Int("result.groups", len(groups)),
+		attribute.Int("result.preferred", preferredCount),
+	)
 
 	return nil
 }

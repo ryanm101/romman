@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"strings"
@@ -28,7 +29,7 @@ func TestExportMatchedIntegration(t *testing.T) {
 	exporter := NewExporter(db, manager)
 
 	// Export matched as JSON
-	data, err := exporter.Export("testlib", ReportMatched, FormatJSON)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMatched, FormatJSON)
 	if err != nil {
 		t.Fatalf("Failed to export: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestExport1G1RIntegration(t *testing.T) {
 	exporter := NewExporter(db, manager)
 
 	// Export 1G1R as JSON
-	data, err := exporter.Export("testlib", Report1G1R, FormatJSON)
+	data, err := exporter.Export(context.Background(), "testlib", Report1G1R, FormatJSON)
 	if err != nil {
 		t.Fatalf("Failed to export 1G1R: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestExportCSVFormat(t *testing.T) {
 	exporter := NewExporter(db, manager)
 
 	// Export as CSV
-	data, err := exporter.Export("testlib", ReportMatched, FormatCSV)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMatched, FormatCSV)
 	if err != nil {
 		t.Fatalf("Failed to export CSV: %v", err)
 	}

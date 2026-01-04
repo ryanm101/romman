@@ -2,10 +2,14 @@ package library
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+
+	"github.com/ryanm101/romman-lib/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ReportType defines what data to export.
@@ -62,7 +66,16 @@ func NewExporter(db *sql.DB, manager *Manager) *Exporter {
 }
 
 // Export generates a report for the given library.
-func (e *Exporter) Export(libraryName string, report ReportType, format ExportFormat) ([]byte, error) {
+func (e *Exporter) Export(ctx context.Context, libraryName string, report ReportType, format ExportFormat) ([]byte, error) {
+	ctx, span := tracing.StartSpan(ctx, "library.Export",
+		tracing.WithAttributes(
+			attribute.String("library.name", libraryName),
+			attribute.String("report.type", string(report)),
+			attribute.String("format", string(format)),
+		),
+	)
+	defer span.End()
+
 	lib, err := e.manager.Get(libraryName)
 	if err != nil {
 		return nil, err
@@ -96,9 +109,15 @@ func (e *Exporter) Export(libraryName string, report ReportType, format ExportFo
 	}
 
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, err
 	}
 	result.Count = len(result.Records)
+
+	// Record success with result attributes
+	tracing.AddSpanAttributes(span,
+		attribute.Int("result.count", result.Count),
+	)
 
 	switch format {
 	case FormatJSON:

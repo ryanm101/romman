@@ -250,15 +250,22 @@ func (imp *Importer) importGame(ctx context.Context, tx *sql.Tx, systemID, datSo
 		return false, fmt.Errorf("failed to get release ID: %w", err)
 	}
 
-	// Insert ROM entries
-	for _, rom := range game.Roms {
-		_, err := tx.Exec(`
+	// Insert ROM entries using prepared statement for better performance
+	if len(game.Roms) > 0 {
+		stmt, err := tx.Prepare(`
 			INSERT INTO rom_entries (release_id, name, sha1, crc32, md5, size)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			releaseID, rom.Name, rom.SHA1, rom.CRC32, rom.MD5, rom.Size,
-		)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`)
 		if err != nil {
-			return false, fmt.Errorf("failed to insert ROM %q: %w", rom.Name, err)
+			return false, fmt.Errorf("failed to prepare ROM statement: %w", err)
+		}
+		defer func() { _ = stmt.Close() }()
+
+		for _, rom := range game.Roms {
+			_, err := stmt.Exec(releaseID, rom.Name, rom.SHA1, rom.CRC32, rom.MD5, rom.Size)
+			if err != nil {
+				return false, fmt.Errorf("failed to insert ROM %q: %w", rom.Name, err)
+			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"path/filepath"
@@ -75,7 +76,7 @@ func TestExporter_ExportMatched_CSV(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportMatched, FormatCSV)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMatched, FormatCSV)
 	require.NoError(t, err)
 
 	csv := string(data)
@@ -103,7 +104,7 @@ func TestExporter_ExportMatched_JSON(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportMatched, FormatJSON)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMatched, FormatJSON)
 	require.NoError(t, err)
 
 	var result ExportResult
@@ -123,7 +124,7 @@ func TestExporter_ExportMissing(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportMissing, FormatJSON)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMissing, FormatJSON)
 	require.NoError(t, err)
 
 	var result ExportResult
@@ -148,7 +149,7 @@ func TestExporter_ExportUnmatched(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportUnmatched, FormatCSV)
+	data, err := exporter.Export(context.Background(), "testlib", ReportUnmatched, FormatCSV)
 	require.NoError(t, err)
 
 	csv := string(data)
@@ -162,7 +163,7 @@ func TestExporter_InvalidLibrary(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	_, err := exporter.Export("nonexistent", ReportMatched, FormatCSV)
+	_, err := exporter.Export(context.Background(), "nonexistent", ReportMatched, FormatCSV)
 	assert.Error(t, err)
 }
 
@@ -173,7 +174,7 @@ func TestExporter_InvalidReportType(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	_, err := exporter.Export("testlib", ReportType("invalid"), FormatCSV)
+	_, err := exporter.Export(context.Background(), "testlib", ReportType("invalid"), FormatCSV)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown report type")
 }
@@ -185,7 +186,7 @@ func TestExporter_InvalidFormat(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	_, err := exporter.Export("testlib", ReportMatched, ExportFormat("xml"))
+	_, err := exporter.Export(context.Background(), "testlib", ReportMatched, ExportFormat("xml"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown format")
 }
@@ -216,7 +217,7 @@ func TestExporter_ExportMissing_TXT(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportMissing, FormatTXT)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMissing, FormatTXT)
 	require.NoError(t, err)
 
 	txt := string(data)
@@ -241,7 +242,7 @@ func TestExporter_TXT_OneNamePerLine(t *testing.T) {
 	manager := NewManager(conn)
 	exporter := NewExporter(conn, manager)
 
-	data, err := exporter.Export("testlib", ReportMissing, FormatTXT)
+	data, err := exporter.Export(context.Background(), "testlib", ReportMissing, FormatTXT)
 	require.NoError(t, err)
 
 	txt := string(data)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func generateCleanupPlan(libraryName, quarantineDir string) {
 		os.Exit(1)
 	}
 
-	plan, err := planner.GeneratePlan(libraryName, absQuarantine)
+	plan, err := planner.GeneratePlan(context.Background(), libraryName, absQuarantine)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error generating plan: %v\n", err)
 		os.Exit(1)

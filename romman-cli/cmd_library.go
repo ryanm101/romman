@@ -565,7 +565,7 @@ func renameLibraryFiles(libraryName string, dryRun bool) {
 	}
 	fmt.Printf("Renaming files in %s [%s]...\n\n", libraryName, mode)
 
-	result, err := renamer.Rename(libraryName, dryRun)
+	result, err := renamer.Rename(context.Background(), libraryName, dryRun)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

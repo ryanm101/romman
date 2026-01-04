@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -52,7 +53,7 @@ func rebuildPreferred(systemName string) {
 	config := library.DefaultPreferenceConfig()
 	selector := library.NewPreferenceSelector(database.Conn(), config)
 
-	if err := selector.SelectPreferred(systemID); err != nil {
+	if err := selector.SelectPreferred(context.Background(), systemID); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error rebuilding preferred: %v\n", err)
 		os.Exit(1)
 	}

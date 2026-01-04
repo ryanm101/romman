@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -86,7 +87,7 @@ func handleExportCommand(args []string) {
 	manager := library.NewManager(database.Conn())
 	exporter := library.NewExporter(database.Conn(), manager)
 
-	data, err := exporter.Export(libraryName, reportType, format)
+	data, err := exporter.Export(context.Background(), libraryName, reportType, format)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error exporting: %v\n", err)
 		os.Exit(1)
