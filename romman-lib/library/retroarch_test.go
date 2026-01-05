@@ -93,7 +93,7 @@ func TestRetroArchExporter_ExportPlaylist(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify the content
-	data, err := os.ReadFile(outputPath)
+	data, err := os.ReadFile(outputPath) //nolint:gosec // Test file from tempdir
 	require.NoError(t, err)
 
 	var playlist RetroArchPlaylist

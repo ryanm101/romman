@@ -7,6 +7,7 @@ import (
 )
 
 func handleDoctorCommand(ctx context.Context, args []string) {
+	_ = args // Reserved for future subcommands
 	fmt.Println("Running database health checks...")
 	database, err := openDB(ctx)
 	if err != nil {

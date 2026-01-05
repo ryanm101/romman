@@ -46,7 +46,7 @@ func (p *IGDBProvider) Search(query string) ([]GameMetadata, error) {
 		return nil, err
 	}
 
-	var results []GameMetadata
+	results := make([]GameMetadata, 0, 10) // Pre-allocate for typical result count
 	for _, g := range games {
 		results = append(results, p.convertGame(g))
 	}
@@ -108,7 +108,7 @@ func getTwitchToken(clientID, clientSecret string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status: %s", resp.Status)

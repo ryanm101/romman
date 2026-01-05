@@ -43,7 +43,7 @@ func TestHashFile(t *testing.T) {
 	// Create a test file with known content
 	testFile := filepath.Join(tmpDir, "test.dat")
 	content := []byte("test content for hashing")
-	err := os.WriteFile(testFile, content, 0644)
+	err := os.WriteFile(testFile, content, 0644) //nolint:gosec // Test file
 	require.NoError(t, err)
 
 	hash, err := HashFile(testFile)
@@ -71,10 +71,10 @@ func TestHashFile_DifferentContent(t *testing.T) {
 	file1 := filepath.Join(tmpDir, "file1.dat")
 	file2 := filepath.Join(tmpDir, "file2.dat")
 
-	err := os.WriteFile(file1, []byte("content 1"), 0644)
+	err := os.WriteFile(file1, []byte("content 1"), 0644) //nolint:gosec // Test file
 	require.NoError(t, err)
 
-	err = os.WriteFile(file2, []byte("content 2"), 0644)
+	err = os.WriteFile(file2, []byte("content 2"), 0644) //nolint:gosec // Test file
 	require.NoError(t, err)
 
 	hash1, err := HashFile(file1)

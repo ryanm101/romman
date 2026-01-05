@@ -9,6 +9,7 @@ import (
 )
 
 func handleConfigCommand(ctx context.Context, args []string) {
+	_ = ctx // May be used for operations in future
 	if len(args) < 1 {
 		fmt.Println("Usage: romman config <command>")
 		fmt.Println("Commands: show, init")

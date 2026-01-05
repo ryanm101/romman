@@ -217,7 +217,7 @@ func (s *Server) handleLibraries(w http.ResponseWriter, r *http.Request) {
 		`, libList[i].id).Scan(&libList[i].matched)
 	}
 
-	var libs []map[string]interface{}
+	libs := make([]map[string]interface{}, 0, len(libList))
 	for _, l := range libList {
 		pct := 0
 		if l.total > 0 {

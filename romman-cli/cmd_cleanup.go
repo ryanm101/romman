@@ -83,6 +83,7 @@ func generateCleanupPlan(ctx context.Context, libraryName, quarantineDir string)
 }
 
 func executeCleanupPlan(ctx context.Context, planFile string, dryRun bool) {
+	_ = ctx // May be used for operations in future
 	plan, err := library.LoadPlan(planFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error loading plan: %v\n", err)

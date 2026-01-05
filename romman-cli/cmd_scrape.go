@@ -29,7 +29,7 @@ func handleScrapeCommand(ctx context.Context, args []string) {
 		PrintError("Error: failed to open database: %v\n", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	name, err := db.GetReleaseName(ctx, id)
 	if err != nil {

@@ -315,7 +315,7 @@ func (e *Exporter) get1G1R(ctx context.Context, libraryID, systemID int64) ([]Ex
 		groups[groupID] = append(groups[groupID], rec)
 	}
 
-	var records []ExportRecord
+	records := make([]ExportRecord, 0, 100) // Pre-allocate for performance
 
 	// Process groups to pick the best one
 	for _, group := range groups {

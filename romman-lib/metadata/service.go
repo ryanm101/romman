@@ -83,25 +83,25 @@ func (s *Service) ScrapeGame(ctx context.Context, releaseID int64, gameName stri
 }
 
 func (s *Service) downloadFile(url, dest string) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil { //nolint:gosec // Standard dir permissions
 		return err
 	}
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) //nolint:gosec // URL from trusted IGDB API
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("http error: %s", resp.Status)
 	}
 
-	f, err := os.Create(dest)
+	f, err := os.Create(dest) //nolint:gosec // Path validated upstream
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = io.Copy(f, resp.Body)
 	return err

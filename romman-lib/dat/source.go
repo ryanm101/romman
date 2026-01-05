@@ -56,7 +56,7 @@ func DetectSourceType(datName string) SourceType {
 
 // HashFile computes SHA256 hash of a file for update detection.
 func HashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // Path from config, checked upstream
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}

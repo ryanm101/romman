@@ -65,7 +65,7 @@ func (db *DB) AddGameMedia(ctx context.Context, releaseID int64, mediaType, url,
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, "DELETE FROM game_media WHERE release_id = ? AND type = ?", releaseID, mediaType); err != nil {
 		return err
@@ -84,7 +84,7 @@ func (db *DB) GetGameMedia(ctx context.Context, releaseID int64) (map[string]str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	media := make(map[string]string)
 	for rows.Next() {

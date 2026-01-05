@@ -129,7 +129,7 @@ func (o *Organizer) Execute(result *OrganizeResult, dryRun bool) error {
 
 		// Create destination directory
 		destDir := filepath.Dir(action.DestPath)
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		if err := os.MkdirAll(destDir, 0755); err != nil { //nolint:gosec // Standard dir permissions
 			result.Errors++
 			result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("failed to create dir %s: %v", destDir, err))
 			continue

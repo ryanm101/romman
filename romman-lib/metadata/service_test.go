@@ -33,7 +33,7 @@ func TestScrapeGame(t *testing.T) {
 	tmpDB := filepath.Join(t.TempDir(), "test.db")
 	database, err := db.Open(context.Background(), tmpDB)
 	assert.NoError(t, err)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Setup release
 	ctx := context.Background()
